@@ -107,3 +107,18 @@ test('times out if the lab never recovers', async () => {
   await runner.observing;
   assert.equal(runner.incidents.list()[0].status, 'timeout');
 });
+
+test('owner mode: only bypass requests may start experiments', async () => {
+  const { runner } = setup({ enabled: 'owner' });
+  runner.ctx = { k8s: { deleteSecret: async () => {} }, cfg: { appNamespace: 'clinic' } };
+  assert.equal((await runner.start({ actionId: 'delete-secret', ipHash: 'a' })).reason, 'disabled');
+  assert.equal((await runner.start({ actionId: 'delete-secret', ipHash: 'a', bypass: true })).ok, true);
+  await runner.observing;
+});
+
+test('the switch accepts only exact values', async () => {
+  for (const enabled of ['false', '', 'yes', null]) {
+    const { runner } = setup({ enabled });
+    assert.equal((await runner.start({ actionId: 'scale-zero', ipHash: 'a', bypass: true })).reason, 'disabled', String(enabled));
+  }
+});

@@ -36,7 +36,7 @@ const runner = new Runner({
   health: () => checkHealth(k8s, cfg),
   memory: () => checkMemory(k8s, cfg),
   readEnabled: async () => {
-    try { return (await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data?.enabled === 'true'; } catch { return false; }
+    try { return (await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data?.enabled ?? 'false'; } catch { return 'false'; }
   },
   log: (err, msg) => app.log.warn({ err: err.message }, msg),
   ctx: { k8s, cfg, http, random: Math.random, load: makeLoad({ url: cfg.loadUrl }) },

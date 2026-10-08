@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { findAction } from './actions.js';
 import { brief, withTimeout } from './errors.js';
 
+// The kill switch: "true" = everyone, "owner" = bypass requests only (game day, self-test), anything else = off.
+export const switchAllows = (mode, bypass) => mode === true || mode === 'true' || (mode === 'owner' && bypass);
+
 // Starts one experiment, then watches the lab until it is healthy again (or times out).
 export class Runner {
   constructor({ cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx,
@@ -16,7 +19,7 @@ export class Runner {
     const [enabled, h, memoryOk] = await Promise.all([
       withTimeout(this.readEnabled(), this.callMs, 'readEnabled'), withTimeout(this.health(), this.callMs, 'health'), withTimeout(this.memory(), this.callMs, 'memory'),
     ]);
-    const verdict = this.guard.check({ ipHash, heavy: action.heavy, enabled, healthy: h.healthy, memoryOk, bypass });
+    const verdict = this.guard.check({ ipHash, heavy: action.heavy, enabled: switchAllows(enabled, bypass), healthy: h.healthy, memoryOk, bypass });
     if (!verdict.ok) return { ...verdict, reasons: h.reasons };
 
     const exp = { id: randomUUID(), action: action.id, title: action.title, startedAt: this.now(), ipHash, status: 'running' };
