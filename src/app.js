@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ACTIONS } from './actions.js';
+import { switchAllows } from './runner.js';
 
 const STATUS = { 'unknown-action': 404, busy: 409, healing: 409, cooldown: 429, 'hourly-cap': 429, disabled: 503, 'node-memory': 503 };
 const same = (a, b) => {
@@ -34,7 +35,7 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
   });
 
   app.get('/chaos/health', async () => ({ ok: true }));
-  app.get('/chaos/status', async () => ({ enabled: await runner.readEnabled(), experiment: runner.guard.running ?? null }));
+  app.get('/chaos/status', async () => ({ enabled: switchAllows(await runner.readEnabled(), false), experiment: runner.guard.running ?? null }));
   app.get('/chaos/actions', async () => ACTIONS.map(({ id, title, heavy }) => ({ id, title, heavy })));
   app.get('/chaos/incidents', async () => incidents.list());
 

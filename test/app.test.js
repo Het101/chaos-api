@@ -92,3 +92,8 @@ test('status says whether experiments are on and what is running', async () => {
   const { app } = make({ deps: { runner: { start: async () => ({ ok: true }), readEnabled: async () => true, guard: { running: { id: 'e9', action: 'kill-pod' } } } } });
   assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: true, experiment: { id: 'e9', action: 'kill-pod' } });
 });
+
+test('status: owner mode reads as paused to the public', async () => {
+  const { app } = make({ deps: { runner: { start: async () => ({ ok: true }), readEnabled: async () => 'owner', guard: { running: null } } } });
+  assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: false, experiment: null });
+});
