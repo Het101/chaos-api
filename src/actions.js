@@ -59,18 +59,10 @@ export const ACTIONS = [
     await ctx.k8s.deleteSecret(ctx.cfg.appNamespace, 'clinic-db');
     return {};
   } },
-  { id: 'rogue-netpol', title: 'Inject a rogue deny-all NetworkPolicy', heavy: false, run: async (ctx) => {
-    const ns = ctx.cfg.appNamespace;
-    await ctx.k8s.createNetworkPolicy(ns, {
-      apiVersion: 'networking.k8s.io/v1',
-      kind: 'NetworkPolicy',
-      metadata: {
-        name: 'chaos-deny-all',
-        // Argo CD's tracking annotation: Argo CD now thinks it owns this, sees it is not in git, and prunes it.
-        annotations: { 'argocd.argoproj.io/tracking-id': `${ctx.cfg.argoApp}:networking.k8s.io/NetworkPolicy:${ns}/chaos-deny-all` },
-      },
-      spec: { podSelector: {}, policyTypes: ['Ingress', 'Egress'] },
-    });
+  { id: 'rogue-netpol', title: 'Delete the api network allow rule', heavy: false, run: async (ctx) => {
+    // NetworkPolicies only add permissions, so a new deny-all changes nothing next to existing allows.
+    // Removing the allow rule does: default-deny now blocks all traffic to the api until Argo CD restores it.
+    await ctx.k8s.deleteNetworkPolicy(ctx.cfg.appNamespace, 'api-ingress');
     return {};
   } },
   { id: 'kill-postgres', title: 'Kill Postgres', heavy: false, run: async (ctx) => {

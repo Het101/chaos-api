@@ -12,7 +12,9 @@ test('defaults match the lab', () => {
   assert.equal(c.selfNamespace, 'chaos');
   assert.equal(c.argoApp, 'clinic');
   assert.equal(c.argoNamespace, 'argocd');
-  assert.equal(c.probeUrl, 'http://api.clinic.svc.cluster.local/api/whoami');
+  assert.equal(c.probeUrl, 'http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/whoami');
+  assert.equal(c.webUrl, 'http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/');
+  assert.equal(c.probeHost, 'lab.hetops.dev');
   assert.equal(c.loadUrl, 'http://api.clinic.svc.cluster.local/api/work');
   assert.equal(c.allowedOrigin, 'https://hetops.dev');
   assert.equal(c.nodeMemoryBytes, 24 * 1024 ** 3);

@@ -56,14 +56,11 @@ test('drift actions', async () => {
   ]);
 });
 
-test('rogue policy carries Argo CD tracking so prune removes it', async () => {
+test('rogue-netpol deletes the api allow rule, so default-deny really blocks it', async () => {
   const { calls, ctx } = fakeCtx();
+  ctx.k8s.deleteNetworkPolicy = async (...args) => { calls.push(['deleteNetworkPolicy', ...args]); };
   await findAction('rogue-netpol').run(ctx);
-  const [, ns, body] = calls[0];
-  assert.equal(ns, 'clinic');
-  assert.equal(body.metadata.name, 'chaos-deny-all');
-  assert.equal(body.metadata.annotations['argocd.argoproj.io/tracking-id'], 'clinic:networking.k8s.io/NetworkPolicy:clinic/chaos-deny-all');
-  assert.deepEqual(body.spec, { podSelector: {}, policyTypes: ['Ingress', 'Egress'] });
+  assert.deepEqual(calls, [['deleteNetworkPolicy', 'clinic', 'api-ingress']]);
 });
 
 test('no ready api pods: process actions fail clearly', async () => {

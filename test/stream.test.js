@@ -77,3 +77,22 @@ test('prober cancels the body of a non-ok response', async () => {
   await p.tick();
   assert.equal(cancelled, 1);
 });
+
+test('prober remembers recent results: ok() is true only if every request in the window succeeded', async () => {
+  let t = 0, fail = false;
+  const p = new Prober({ url: 'u', onBatch() {}, now: () => t, fetchImpl: async () => (fail ? { ok: false, status: 503 } : { ok: true, status: 200, json: async () => ({ pod: 'api-a' }) }) });
+  assert.equal(p.ok(4000), false, 'no data yet is not ok');
+  await p.tick();
+  assert.equal(p.ok(4000), true);
+  t = 1000; fail = true; await p.tick();
+  assert.equal(p.ok(4000), false);
+  t = 6000; fail = false; await p.tick();
+  assert.equal(p.ok(4000), true, 'the failure at 1 s is outside the 4 s window');
+});
+
+test('a non-JSON target (the web page) counts a 200 as ok without parsing it', async () => {
+  const batches = [];
+  const p = new Prober({ url: 'u', json: false, now: () => 5, onBatch: (b) => batches.push(b), fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error('not json'); }, body: { cancel: async () => {} } }) });
+  await p.tick(); p.flush();
+  assert.deepEqual(batches[0], [{ at: 5, ok: true, status: 200, pod: null, ms: 0 }]);
+});

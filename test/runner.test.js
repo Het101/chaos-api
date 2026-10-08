@@ -122,3 +122,25 @@ test('the switch accepts only exact values', async () => {
     assert.equal((await runner.start({ actionId: 'scale-zero', ipHash: 'a', bypass: true })).reason, 'disabled', String(enabled));
   }
 });
+
+test('F7: never recovered before the action has finished its own work', async () => {
+  // traffic-spike breaks things early (new pods starting), is healthy again at 4 s, but its load runs on
+  const { runner } = setup({ healthSeq: [true, false, true], timeoutMs: 600_000 });
+  runner.ctx = { load: () => {}, cfg: {} };
+  await runner.start({ actionId: 'traffic-spike', ipHash: 'a', bypass: true });
+  await runner.observing;
+  const exp = runner.incidents.list()[0];
+  assert.equal(exp.status, 'recovered');
+  assert.ok(exp.recoveryMs >= 100_000, `recovered too early: ${exp.recoveryMs}`);
+});
+
+test('F3: recovered only once users are served again, and user errors count as breakage', async () => {
+  const { runner } = setup({ healthSeq: [true] });
+  const userSeq = [false, false, false, true];
+  runner.userOk = () => (userSeq.length > 1 ? userSeq.shift() : userSeq[0]);
+  runner.ctx = { k8s: { deletePod: async () => {} }, cfg: { dataNamespace: 'clinic-data' } };
+  await runner.start({ actionId: 'kill-postgres', ipHash: 'a' });
+  await runner.observing;
+  // pods looked healthy throughout; users failed for 3 polls (2, 4, 6 s), served again at 8 s
+  assert.equal(runner.incidents.list()[0].recoveryMs, 8000);
+});
