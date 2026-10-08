@@ -10,6 +10,7 @@ import { checkHealth, checkMemory } from './health.js';
 import { verifyTurnstile } from './turnstile.js';
 import { makeLoad } from './actions.js';
 import { buildApp } from './app.js';
+import { withTimeout } from './errors.js';
 
 const cfg = loadConfig();
 const k8s = createK8s();
@@ -23,6 +24,7 @@ try {
 
 const http = async (url, opts) => {
   const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(3000) });
+  await res.body?.cancel();
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 };
 
@@ -36,6 +38,7 @@ const runner = new Runner({
   readEnabled: async () => {
     try { return (await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data?.enabled === 'true'; } catch { return false; }
   },
+  log: (err, msg) => app.log.warn({ err: err.message }, msg),
   ctx: { k8s, cfg, http, random: Math.random, load: makeLoad({ url: cfg.loadUrl }) },
 });
 
@@ -48,7 +51,7 @@ const refresh = async () => {
   if (refreshing) return; // never overlap: a slow API server must not pile up requests
   refreshing = true;
   try {
-    const snap = await takeSnapshot(k8s, cfg);
+    const snap = await withTimeout(takeSnapshot(k8s, cfg), 10_000, 'snapshot');
     const json = JSON.stringify(snap);
     if (json !== latestJson) {
       latestJson = json;
@@ -74,6 +77,7 @@ const shutdown = async (signal) => {
   try {
     prober.stop();
     timers.forEach(clearInterval);
+    stream.closeAll(); // open SSE sockets are never idle, so close() would wait on them
     await app.close();
     process.exit(0);
   } catch (err) {

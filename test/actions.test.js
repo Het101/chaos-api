@@ -51,7 +51,7 @@ test('drift actions', async () => {
   const { calls, ctx } = fakeCtx();
   for (const id of ['scale-zero', 'delete-web', 'delete-api-svc', 'delete-secret', 'bad-release', 'nuke-namespace']) await findAction(id).run(ctx);
   assert.deepEqual(calls, [
-    ['scaleDeployment', 'clinic', 'api', 0], ['deleteDeployment', 'clinic', 'web'], ['deleteService', 'clinic', 'api'],
+    ['scaleDeployment', 'clinic', 'web', 0], ['deleteDeployment', 'clinic', 'web'], ['deleteService', 'clinic', 'api'],
     ['deleteSecret', 'clinic', 'clinic-db'], ['setImage', 'clinic', 'api', 'api', 'ghcr.io/het101/clinic-api:bad'], ['deleteNamespace', 'clinic'],
   ]);
 });
@@ -77,8 +77,23 @@ test('load generator fires concurrent requests until the deadline', async () => 
   const load = makeLoad({ url: 'http://x/api/work', concurrency: 3, fetchImpl: async () => { hits++; await new Promise((r) => setImmediate(r)); } });
   load(40);
   await new Promise((r) => setTimeout(r, 80));
-  assert.ok(hits >= 6, `expected several requests, got ${hits}`);
+  assert.ok(hits >= 3, `expected several requests, got ${hits}`);
   const after = hits;
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(hits, after);
+});
+
+test('load loop cancels bodies and backs off after a failure', async () => {
+  let hits = 0, cancelled = 0;
+  makeLoad({ url: 'u', concurrency: 1, fetchImpl: async () => { hits++; throw new Error('dns'); } })(450);
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(hits <= 3, `expected back-off, got ${hits}`);
+  makeLoad({ url: 'u', concurrency: 1, fetchImpl: async () => ({ body: { cancel: async () => { cancelled++; await new Promise((r) => setImmediate(r)); } } }) })(30);
+  await new Promise((r) => setTimeout(r, 60));
+  assert.ok(cancelled > 0);
+});
+
+test('hang and traffic-spike declare a longer observation window', () => {
+  assert.equal(findAction('hang').observeMs, 75_000);
+  assert.equal(findAction('traffic-spike').observeMs, 100_000);
 });

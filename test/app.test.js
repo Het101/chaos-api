@@ -74,3 +74,16 @@ test('5xx never leaks internals', async () => {
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.json(), { error: 'internal' });
 });
+
+test('a non-ASCII bypass header is a 403, never a 500', async () => {
+  const { app } = make();
+  const res = await app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload: {}, headers: { 'x-chaos-bypass': 'bypasé' } });
+  assert.equal(res.statusCode, 403);
+});
+
+test('a full stream answers 503 before hijacking', async () => {
+  const { app } = make({ deps: { stream: { full: true, add() { throw new Error('no'); }, send() {} } } });
+  const res = await app.inject('/chaos/stream');
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(res.json(), { reason: 'busy-stream' });
+});

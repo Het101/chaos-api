@@ -12,6 +12,7 @@ export class Prober {
     try {
       const res = await this.fetchImpl(this.url, { signal: AbortSignal.timeout(1000) });
       const body = res.ok ? await res.json() : null;
+      if (!res.ok) await res.body?.cancel();
       this.#batch.push({ at, ok: res.ok, status: res.status, pod: body?.pod ?? null, ms: this.now() - at });
     } catch {
       this.#batch.push({ at, ok: false, status: 0, pod: null, ms: this.now() - at });

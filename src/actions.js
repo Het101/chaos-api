@@ -36,9 +36,9 @@ export const ACTIONS = [
   } },
   { id: 'crash', title: 'Crash the process', heavy: false, run: (ctx) => internal(ctx, 'crash') },
   { id: 'leak', title: 'Memory leak', heavy: false, run: (ctx) => internal(ctx, 'leak') },
-  { id: 'hang', title: 'Hang the app', heavy: false, run: (ctx) => internal(ctx, 'hang') },
-  { id: 'scale-zero', title: 'Scale the API to 0', heavy: false, run: async (ctx) => {
-    await ctx.k8s.scaleDeployment(ctx.cfg.appNamespace, 'api', 0);
+  { id: 'hang', title: 'Hang the app', heavy: false, observeMs: 75_000, run: (ctx) => internal(ctx, 'hang') },
+  { id: 'scale-zero', title: 'Scale the web tier to 0', heavy: false, run: async (ctx) => {
+    await ctx.k8s.scaleDeployment(ctx.cfg.appNamespace, 'web', 0);
     return {};
   } },
   { id: 'delete-web', title: 'Delete the web Deployment', heavy: false, run: async (ctx) => {
@@ -77,7 +77,7 @@ export const ACTIONS = [
     await ctx.k8s.deletePod(ctx.cfg.dataNamespace, 'postgres-0');
     return {};
   } },
-  { id: 'traffic-spike', title: 'Traffic spike', heavy: true, run: async (ctx) => {
+  { id: 'traffic-spike', title: 'Traffic spike', heavy: true, observeMs: 100_000, run: async (ctx) => {
     ctx.load(90_000); // runs in the background; the HPA reacts within a minute
     return { seconds: 90 };
   } },
@@ -96,7 +96,7 @@ export function makeLoad({ url, fetchImpl = fetch, concurrency = 8 }) {
     for (let i = 0; i < concurrency; i++) {
       (async () => {
         while (Date.now() < until) {
-          try { await fetchImpl(url, { signal: AbortSignal.timeout(5000) }); } catch { /* failures are part of the show */ }
+          try { await (await fetchImpl(url, { signal: AbortSignal.timeout(5000) }))?.body?.cancel(); } catch { await new Promise((r) => setTimeout(r, 200)); } // failures are part of the show; don't spin on them
         }
       })();
     }
