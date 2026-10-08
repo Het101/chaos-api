@@ -49,3 +49,31 @@ test('snapshot survives a deleted namespace and reports Argo CD', async () => {
   assert.equal(s['clinic-data'].pods[0].name, 'postgres-0');
   assert.deepEqual(s.argo, { sync: 'OutOfSync', health: 'Missing', operation: 'Running' });
 });
+
+test('SSE: capped at 200 clients, slow readers are dropped, closeAll ends everyone', () => {
+  const s = new Stream();
+  for (let i = 0; i < 200; i++) s.add(new FakeRes());
+  assert.equal(s.full, true);
+  assert.equal(s.add(new FakeRes()), false);
+  assert.equal(s.size, 200);
+  const slow = new FakeRes();
+  slow.writableLength = 300 * 1024;
+  slow.destroy = () => { slow.destroyed = true; };
+  const s2 = new Stream();
+  const ok = new FakeRes();
+  s2.add(ok); s2.add(slow);
+  s2.broadcast('x', {});
+  assert.equal(slow.destroyed, true);
+  assert.equal(s2.size, 1);
+  ok.ended = false; ok.end = () => { ok.ended = true; };
+  s2.closeAll();
+  assert.equal(ok.ended, true);
+  assert.equal(s2.size, 0);
+});
+
+test('prober cancels the body of a non-ok response', async () => {
+  let cancelled = 0;
+  const p = new Prober({ url: 'u', onBatch() {}, fetchImpl: async () => ({ ok: false, status: 503, body: { cancel: async () => { cancelled++; } } }) });
+  await p.tick();
+  assert.equal(cancelled, 1);
+});

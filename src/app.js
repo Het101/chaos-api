@@ -3,7 +3,11 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { ACTIONS } from './actions.js';
 
 const STATUS = { 'unknown-action': 404, busy: 409, healing: 409, cooldown: 429, 'hourly-cap': 429, disabled: 503, 'node-memory': 503 };
-const same = (a, b) => typeof a === 'string' && !!b && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const same = (a, b) => {
+  if (typeof a !== 'string' || !b) return false;
+  const x = Buffer.from(a), y = Buffer.from(b); // byte lengths: timingSafeEqual throws on a mismatch
+  return x.length === y.length && timingSafeEqual(x, y);
+};
 
 export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, latestSnapshot = () => null, logger = true }) {
   const app = Fastify({ logger });
@@ -34,6 +38,7 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
   app.get('/chaos/incidents', async () => incidents.list());
 
   app.get('/chaos/stream', (req, reply) => {
+    if (stream.full) return reply.code(503).send({ reason: 'busy-stream' });
     reply.hijack(); // we own the raw response from here: it stays open
     const headers = req.headers.origin === cfg.allowedOrigin ? { 'access-control-allow-origin': cfg.allowedOrigin } : {};
     stream.add(reply.raw, headers);
