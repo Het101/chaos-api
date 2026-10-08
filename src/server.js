@@ -4,7 +4,7 @@ import { Guard } from './guard.js';
 import { IncidentLog } from './incidents.js';
 import { Runner } from './runner.js';
 import { Stream } from './stream.js';
-import { Prober } from './prober.js';
+import { Prober, httpFetch } from './prober.js';
 import { takeSnapshot } from './snapshot.js';
 import { checkHealth, checkMemory } from './health.js';
 import { verifyTurnstile } from './turnstile.js';
@@ -28,6 +28,11 @@ const http = async (url, opts) => {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 };
 
+// Both tiers, through the ingress like a visitor. Only the api results are drawn on the page (they name a pod).
+const via = { fetchImpl: httpFetch, headers: { host: cfg.probeHost } };
+const prober = new Prober({ url: cfg.probeUrl, ...via, onBatch: (batch) => stream.broadcast('probes', batch) });
+const webProber = new Prober({ url: cfg.webUrl, json: false, intervalMs: 1000, ...via, onBatch: () => {} });
+
 const runner = new Runner({
   cfg,
   guard: new Guard({ cooldownMs: cfg.cooldownMs, heavyPerHour: cfg.heavyPerHour }),
@@ -39,6 +44,7 @@ const runner = new Runner({
     try { return (await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data?.enabled ?? 'false'; } catch { return 'false'; }
   },
   log: (err, msg) => app.log.warn({ err: err.message }, msg),
+  userOk: () => prober.ok(4000) && webProber.ok(4000),
   ctx: { k8s, cfg, http, random: Math.random, load: makeLoad({ url: cfg.loadUrl }) },
 });
 
@@ -65,9 +71,9 @@ const refresh = async () => {
   }
 };
 
-const prober = new Prober({ url: cfg.probeUrl, onBatch: (batch) => stream.broadcast('probes', batch) });
 const timers = [setInterval(refresh, 1000), setInterval(() => stream.heartbeat(), 15_000)];
 prober.start();
+webProber.start();
 
 let closing = false;
 const shutdown = async (signal) => {
@@ -76,6 +82,7 @@ const shutdown = async (signal) => {
   app.log.info({ signal }, 'shutting down');
   try {
     prober.stop();
+    webProber.stop();
     timers.forEach(clearInterval);
     stream.closeAll(); // open SSE sockets are never idle, so close() would wait on them
     await app.close();

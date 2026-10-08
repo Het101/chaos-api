@@ -8,8 +8,8 @@ export const switchAllows = (mode, bypass) => mode === true || mode === 'true' |
 // Starts one experiment, then watches the lab until it is healthy again (or times out).
 export class Runner {
   constructor({ cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx,
-    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {} }) {
-    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log });
+    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true }) {
+    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk });
     this.observing = Promise.resolve();
   }
 
@@ -40,7 +40,6 @@ export class Runner {
   }
 
   async #observe(exp, action) {
-    const minMs = Math.max(this.minObserveMs, action.observeMs ?? 0);
     let sawBreak = false;
     try {
       for (;;) {
@@ -48,9 +47,12 @@ export class Runner {
         // A hung health call counts as unhealthy, and elapsed is read after it: the timeout is wall-clock.
         const h = await withTimeout(this.health(), this.callMs, 'health').catch((err) => ({ healthy: false, reasons: [brief(err)] }));
         const elapsed = this.now() - exp.startedAt;
-        if (!h.healthy) sawBreak = true;
-        // Some breakage takes seconds to show; never declare recovery before it could have been seen.
-        if (h.healthy && (sawBreak || elapsed >= minMs)) { exp.status = 'recovered'; exp.recoveryMs = elapsed; break; }
+        // Recovered means users are served again, not just that the pods look fine.
+        const users = this.userOk();
+        if (!h.healthy || !users) sawBreak = true;
+        // Never before the action has finished its own work (traffic-spike), nor before breakage could have shown.
+        const settled = elapsed >= (action.observeMs ?? 0) && (sawBreak || elapsed >= this.minObserveMs);
+        if (h.healthy && users && settled) { exp.status = 'recovered'; exp.recoveryMs = elapsed; break; }
         if (elapsed >= this.cfg.experimentTimeoutMs) { exp.status = 'timeout'; exp.reasons = h.reasons; break; }
       }
     } catch (err) {

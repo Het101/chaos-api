@@ -26,7 +26,7 @@ export function createK8s() {
     deleteDeployment: (namespace, name) => apps.deleteNamespacedDeployment({ namespace, name }),
     deleteService: (namespace, name) => core.deleteNamespacedService({ namespace, name }),
     deleteSecret: (namespace, name) => core.deleteNamespacedSecret({ namespace, name }),
-    createNetworkPolicy: (namespace, body) => net.createNamespacedNetworkPolicy({ namespace, body }),
+    deleteNetworkPolicy: (namespace, name) => net.deleteNamespacedNetworkPolicy({ namespace, name }),
     deleteNamespace: (name) => core.deleteNamespace({ name }),
     getArgoApp: (namespace, name) => custom.getNamespacedCustomObject({ group: 'argoproj.io', version: 'v1alpha1', namespace, plural: 'applications', name }),
     nodeMemoryUsedBytes: async () => (await metrics.getNodeMetrics()).items.reduce((sum, n) => sum + bytes(n.usage.memory), 0),
