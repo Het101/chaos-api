@@ -74,7 +74,7 @@ test('no ready api pods: process actions fail clearly', async () => {
 
 test('load generator fires concurrent requests until the deadline', async () => {
   let hits = 0;
-  const load = makeLoad({ url: 'http://x/api/work', concurrency: 3, fetchImpl: async () => { hits++; await new Promise((r) => setTimeout(r, 5)); } });
+  const load = makeLoad({ url: 'http://x/api/work', concurrency: 3, fetchImpl: async () => { hits++; await new Promise((r) => setImmediate(r)); } });
   load(40);
   await new Promise((r) => setTimeout(r, 80));
   assert.ok(hits >= 6, `expected several requests, got ${hits}`);
