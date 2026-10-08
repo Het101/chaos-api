@@ -1,4 +1,5 @@
 import { isReady } from './pods.js';
+import { brief } from './errors.js';
 
 // "Is the lab fully healthy?", the gate before every experiment and the finish line after it.
 export async function checkHealth(k8s, cfg) {
@@ -13,13 +14,13 @@ export async function checkHealth(k8s, cfg) {
       if (want < 1 || have < want) reasons.push(`${name}: ${have}/${want} available`);
     }
   } catch (err) {
-    reasons.push(`${cfg.appNamespace}: ${err.message}`);
+    reasons.push(`${cfg.appNamespace}: ${brief(err)}`);
   }
   try {
     const pods = await k8s.listPods(cfg.dataNamespace, 'app=postgres');
     if (!pods.some(isReady)) reasons.push('postgres: not ready');
   } catch (err) {
-    reasons.push(`postgres: ${err.message}`);
+    reasons.push(`postgres: ${brief(err)}`);
   }
   try {
     const app = await k8s.getArgoApp(cfg.argoNamespace, cfg.argoApp);
@@ -27,7 +28,7 @@ export async function checkHealth(k8s, cfg) {
     const health = app.status?.health?.status;
     if (sync !== 'Synced' || health !== 'Healthy') reasons.push(`argo: ${sync}/${health}`);
   } catch (err) {
-    reasons.push(`argo: ${err.message}`);
+    reasons.push(`argo: ${brief(err)}`);
   }
   return { healthy: reasons.length === 0, reasons };
 }

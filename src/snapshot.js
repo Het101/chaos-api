@@ -1,4 +1,5 @@
 import { summarizePod } from './pods.js';
+import { brief } from './errors.js';
 
 async function namespaceView(k8s, ns) {
   try {
@@ -9,7 +10,7 @@ async function namespaceView(k8s, ns) {
       deployments: deps.map((d) => ({ name: d.metadata.name, desired: d.spec?.replicas ?? 0, available: d.status?.availableReplicas ?? 0 })),
     };
   } catch (err) {
-    return { exists: false, error: err.message, pods: [], deployments: [] }; // namespace nuked: draw an empty zone
+    return { exists: false, error: brief(err), pods: [], deployments: [] }; // namespace nuked: draw an empty zone
   }
 }
 
@@ -20,7 +21,7 @@ export async function takeSnapshot(k8s, cfg) {
     namespaceView(k8s, cfg.dataNamespace),
     k8s.getArgoApp(cfg.argoNamespace, cfg.argoApp).then(
       (a) => ({ sync: a.status?.sync?.status ?? 'Unknown', health: a.status?.health?.status ?? 'Unknown', operation: a.status?.operationState?.phase ?? null }),
-      (err) => ({ sync: 'Unknown', health: 'Unknown', operation: null, error: err.message }),
+      (err) => ({ sync: 'Unknown', health: 'Unknown', operation: null, error: brief(err) }),
     ),
   ]);
   return { [cfg.appNamespace]: app, [cfg.dataNamespace]: data, argo };

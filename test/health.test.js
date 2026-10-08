@@ -28,9 +28,9 @@ test('lists every reason it is not healthy', async () => {
 });
 
 test('a deleted namespace is unhealthy, not a crash', async () => {
-  const h = await checkHealth(k8s({ listDeployments: async () => { throw new Error('namespaces "clinic" not found'); } }), cfg);
+  const h = await checkHealth(k8s({ listDeployments: async () => { throw Object.assign(new Error('namespaces "clinic" not found'), { code: 404 }); } }), cfg);
   assert.equal(h.healthy, false);
-  assert.match(h.reasons[0], /not found/);
+  assert.equal(h.reasons[0], 'clinic: HTTP 404');
 });
 
 test('memory gate: under the threshold only, and fails closed', async () => {
