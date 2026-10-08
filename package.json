@@ -1,0 +1,16 @@
+{
+  "name": "chaos-api",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^1.4.0",
+    "fastify": "^5.12.5"
+  }
+}
