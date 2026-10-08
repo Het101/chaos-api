@@ -34,6 +34,7 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
   });
 
   app.get('/chaos/health', async () => ({ ok: true }));
+  app.get('/chaos/status', async () => ({ enabled: await runner.readEnabled(), experiment: runner.guard.running ?? null }));
   app.get('/chaos/actions', async () => ACTIONS.map(({ id, title, heavy }) => ({ id, title, heavy })));
   app.get('/chaos/incidents', async () => incidents.list());
 

@@ -87,3 +87,8 @@ test('a full stream answers 503 before hijacking', async () => {
   assert.equal(res.statusCode, 503);
   assert.deepEqual(res.json(), { reason: 'busy-stream' });
 });
+
+test('status says whether experiments are on and what is running', async () => {
+  const { app } = make({ deps: { runner: { start: async () => ({ ok: true }), readEnabled: async () => true, guard: { running: { id: 'e9', action: 'kill-pod' } } } } });
+  assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: true, experiment: { id: 'e9', action: 'kill-pod' } });
+});
