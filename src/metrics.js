@@ -8,11 +8,20 @@ export function createMetrics() {
   const recovery = new Histogram({ name: 'chaos_recovery_seconds', help: 'Time to recover, for recovered experiments only.', labelNames: ['action'],
     buckets: [5, 10, 20, 30, 60, 90, 120, 180, 300, 600], registers: [register] });
   const probes = new Counter({ name: 'chaos_probe_requests_total', help: 'Synthetic probe requests by tier and result.', labelNames: ['tier', 'result'], registers: [register] });
-  return { register, experiments, recovery, probes };
+  // The SLI: a visit is good only if the page and /api both answered in time (the prober's 1 s timeout).
+  const visits = new Counter({ name: 'chaos_visits_total', help: 'Synthetic visits (page, then /api), good or bad.', labelNames: ['result'], registers: [register] });
+  visits.inc({ result: 'good' }, 0); // both series exist from the start: "no bad visits yet" reads 0, not absent
+  visits.inc({ result: 'bad' }, 0);
+  return { register, experiments, recovery, probes, visits };
 }
 
 // One visit entry from the Prober: the api tier always, the web tier when the visit included the page.
 export function countProbe(probes, entry) {
   probes.inc({ tier: 'api', result: entry.ok ? 'ok' : 'fail' });
   if (entry.web) probes.inc({ tier: 'web', result: entry.web.ok ? 'ok' : 'fail' });
+}
+
+export function countVisit(visits, entry) {
+  const good = entry.ok && (entry.web ? entry.web.ok : true);
+  visits.inc({ result: good ? 'good' : 'bad' });
 }
