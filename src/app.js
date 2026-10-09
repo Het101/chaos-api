@@ -10,7 +10,7 @@ const same = (a, b) => {
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, latestSnapshot = () => null, logger = true }) {
+export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, latestSnapshot = () => null, metrics, logger = true }) {
   const app = Fastify({ logger });
 
   app.setErrorHandler((err, req, reply) => {
@@ -33,6 +33,11 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
     reply.header('access-control-allow-headers', 'content-type');
     return reply.code(204).send();
   });
+
+  // Deliberately outside /chaos: the public ingress only routes /chaos, so this stays cluster-internal.
+  if (metrics) {
+    app.get('/metrics', async (req, reply) => reply.header('content-type', metrics.register.contentType).send(await metrics.register.metrics()));
+  }
 
   app.get('/chaos/health', async () => ({ ok: true }));
   app.get('/chaos/status', async () => ({ enabled: switchAllows(await runner.readEnabled(), false), experiment: runner.guard.running ?? null }));
