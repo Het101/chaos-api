@@ -11,10 +11,12 @@ import { verifyTurnstile } from './turnstile.js';
 import { makeLoad } from './actions.js';
 import { buildApp } from './app.js';
 import { withTimeout } from './errors.js';
+import { createMetrics, countProbe } from './metrics.js';
 
 const cfg = loadConfig();
 const k8s = createK8s();
 const stream = new Stream();
+const metrics = createMetrics();
 
 const incidents = new IncidentLog({ save: (items) => k8s.patchConfigMap(cfg.selfNamespace, 'chaos-incidents', { incidents: JSON.stringify(items) }) });
 try {
@@ -30,12 +32,13 @@ const http = async (url, opts) => {
 
 // Visits through the ingress, like a real visitor: the page from a web pod, then /api from an api pod.
 const prober = new Prober({ url: cfg.probeUrl, webUrl: cfg.webUrl, fetchImpl: httpFetch, headers: { host: cfg.probeHost },
-  onBatch: (batch) => stream.broadcast('probes', batch) });
+  onBatch: (batch) => stream.broadcast('probes', batch), onResult: (entry) => countProbe(metrics.probes, entry) });
 
 const runner = new Runner({
   cfg,
   guard: new Guard({ cooldownMs: cfg.cooldownMs, heavyPerHour: cfg.heavyPerHour }),
   incidents,
+  metrics,
   broadcast: (event, data) => stream.broadcast(event, data),
   health: () => checkHealth(k8s, cfg),
   memory: () => checkMemory(k8s, cfg),
@@ -50,7 +53,7 @@ const runner = new Runner({
 let latest = null;
 let latestJson = '';
 let refreshing = false;
-const app = buildApp({ cfg, runner, stream, incidents, verifyTurnstile, latestSnapshot: () => latest });
+const app = buildApp({ cfg, runner, stream, incidents, verifyTurnstile, metrics, latestSnapshot: () => latest });
 
 const refresh = async () => {
   if (refreshing) return; // never overlap: a slow API server must not pile up requests

@@ -8,8 +8,8 @@ export const switchAllows = (mode, bypass) => mode === true || mode === 'true' |
 // Starts one experiment, then watches the lab until it is healthy again (or times out).
 export class Runner {
   constructor({ cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx,
-    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true }) {
-    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk });
+    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true, metrics = null }) {
+    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk, metrics });
     this.observing = Promise.resolve();
   }
 
@@ -67,5 +67,7 @@ export class Runner {
     this.guard.end();
     this.incidents.add(exp);
     this.broadcast('experiment', { ...exp });
+    this.metrics?.experiments.inc({ action: exp.action, status: exp.status });
+    if (exp.status === 'recovered') this.metrics?.recovery.observe({ action: exp.action }, exp.recoveryMs / 1000);
   }
 }

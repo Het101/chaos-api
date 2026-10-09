@@ -25,8 +25,8 @@ export class Prober {
   #batch = [];
   #recent = []; // the last 10 s of results, for ok()
 
-  constructor({ url, webUrl, fetchImpl = fetch, headers, json = true, now = Date.now, intervalMs = 200, flushMs = 1000, onBatch }) {
-    Object.assign(this, { url, webUrl, fetchImpl, headers, json, now, intervalMs, flushMs, onBatch });
+  constructor({ url, webUrl, fetchImpl = fetch, headers, json = true, now = Date.now, intervalMs = 200, flushMs = 1000, onBatch, onResult = () => {} }) {
+    Object.assign(this, { url, webUrl, fetchImpl, headers, json, now, intervalMs, flushMs, onBatch, onResult });
   }
 
   // One request; the pod is named by its X-Pod header (errors too), or by a JSON body's pod field.
@@ -50,6 +50,7 @@ export class Prober {
     if (web) r.web = { ok: web.ok, pod: web.pod };
     this.#batch.push(r);
     this.#recent.push(r);
+    this.onResult(r);
     while (this.#recent.length && this.#recent[0].at < this.now() - 10_000) this.#recent.shift();
   }
 
