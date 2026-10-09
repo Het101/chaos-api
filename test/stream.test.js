@@ -96,3 +96,30 @@ test('a non-JSON target (the web page) counts a 200 as ok without parsing it', a
   await p.tick(); p.flush();
   assert.deepEqual(batches[0], [{ at: 5, ok: true, status: 200, pod: null, ms: 0 }]);
 });
+
+// A response as httpFetch returns it: status, x-pod header, optional JSON body.
+const reply = (status, pod, body) => ({ ok: status >= 200 && status < 300, status, headers: { get: (k) => (k === 'x-pod' ? pod : null) }, json: async () => body, body: { cancel: async () => {} } });
+
+test('a visit is the page from a web pod, then /api from an api pod, both named', async () => {
+  const batches = [];
+  const p = new Prober({ url: 'api', webUrl: 'web', now: () => 7, onBatch: (b) => batches.push(b),
+    fetchImpl: async (url) => (url === 'web' ? reply(200, 'web-1') : reply(200, 'api-2', { pod: 'api-2' })) });
+  await p.tick(); p.flush();
+  assert.deepEqual(batches[0], [{ at: 7, ok: true, status: 200, pod: 'api-2', ms: 0, web: { ok: true, pod: 'web-1' } }]);
+});
+
+test('database down: the api pod still answers (named by its header) but the hop fails', async () => {
+  const batches = [];
+  const p = new Prober({ url: 'api', webUrl: 'web', now: () => 7, onBatch: (b) => batches.push(b),
+    fetchImpl: async (url) => (url === 'web' ? reply(200, 'web-1') : reply(500, 'api-2', { error: 'internal' })) });
+  await p.tick(); p.flush();
+  assert.deepEqual(batches[0][0], { at: 7, ok: false, status: 500, pod: 'api-2', ms: 0, web: { ok: true, pod: 'web-1' } });
+});
+
+test('users are only ok when both the page and the api work', async () => {
+  let webUp = false;
+  const p = new Prober({ url: 'api', webUrl: 'web', now: () => 0, onBatch() {},
+    fetchImpl: async (url) => (url === 'web' ? reply(webUp ? 200 : 503, null) : reply(200, 'api-1', { pod: 'api-1' })) });
+  await p.tick();
+  assert.equal(p.ok(4000), false, 'api fine but the page is down');
+});
