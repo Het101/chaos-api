@@ -11,7 +11,7 @@ import { verifyTurnstile } from './turnstile.js';
 import { makeLoad } from './actions.js';
 import { buildApp } from './app.js';
 import { withTimeout } from './errors.js';
-import { createMetrics, countProbe } from './metrics.js';
+import { createMetrics, countProbe, countVisit } from './metrics.js';
 
 const cfg = loadConfig();
 const k8s = createK8s();
@@ -32,7 +32,7 @@ const http = async (url, opts) => {
 
 // Visits through the ingress, like a real visitor: the page from a web pod, then /api from an api pod.
 const prober = new Prober({ url: cfg.probeUrl, webUrl: cfg.webUrl, fetchImpl: httpFetch, headers: { host: cfg.probeHost },
-  onBatch: (batch) => stream.broadcast('probes', batch), onResult: (entry) => countProbe(metrics.probes, entry) });
+  onBatch: (batch) => stream.broadcast('probes', batch), onResult: (entry) => { countProbe(metrics.probes, entry); countVisit(metrics.visits, entry); } });
 
 const runner = new Runner({
   cfg,

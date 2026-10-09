@@ -70,3 +70,18 @@ test('GET /metrics serves the registry, and 404s when no metrics are wired', asy
   assert.match(res.body, /chaos_experiments_total/);
   assert.equal((await buildApp(deps).inject('/metrics')).statusCode, 404);
 });
+
+test('a visit is good only if page and api both succeeded; both series exist from the start', async () => {
+  const { createMetrics: create, countVisit } = await import('../src/metrics.js');
+  const m = create();
+  const before = await m.register.getSingleMetricAsString('chaos_visits_total');
+  assert.match(before, /chaos_visits_total\{result="good"\} 0/);
+  assert.match(before, /chaos_visits_total\{result="bad"\} 0/);
+  countVisit(m.visits, { ok: true, web: { ok: true } });   // good
+  countVisit(m.visits, { ok: true, web: { ok: false } });  // page failed: bad
+  countVisit(m.visits, { ok: false, web: { ok: true } });  // api failed or too slow: bad
+  countVisit(m.visits, { ok: true });                       // no page hop recorded: judged on the api alone
+  const after = await m.register.getSingleMetricAsString('chaos_visits_total');
+  assert.match(after, /chaos_visits_total\{result="good"\} 2/);
+  assert.match(after, /chaos_visits_total\{result="bad"\} 2/);
+});
