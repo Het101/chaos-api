@@ -14,14 +14,15 @@ async function internal(ctx, what) {
   return { pod: pod.metadata.name };
 }
 
-// The fixed menu. Visitors pick an id; nothing else is ever executed.
+// The fixed menu. Visitors pick an id; nothing else is ever executed. target = recovery target in seconds (the spec's,
+// measured on game day); the nightly self-test fails any action slower than it.
 export const ACTIONS = [
-  { id: 'kill-pod', title: 'Kill a pod', heavy: false, run: async (ctx) => {
+  { id: 'kill-pod', title: 'Kill a pod', heavy: false, target: 30, run: async (ctx) => {
     const pod = pick(await readyApiPods(ctx), ctx.random);
     await ctx.k8s.deletePod(ctx.cfg.appNamespace, pod.metadata.name);
     return { pod: pod.metadata.name };
   } },
-  { id: 'evict-api', title: 'Evict every API pod', heavy: false, run: async (ctx) => {
+  { id: 'evict-api', title: 'Evict every API pod', heavy: false, target: 90, run: async (ctx) => {
     const pods = await ctx.k8s.listPods(ctx.cfg.appNamespace, 'app=api');
     let evicted = 0, refused = 0;
     for (const p of pods) {
@@ -29,51 +30,51 @@ export const ACTIONS = [
     }
     return { evicted, refused };
   } },
-  { id: 'delete-api-pods', title: 'Delete every API pod', heavy: false, run: async (ctx) => {
+  { id: 'delete-api-pods', title: 'Delete every API pod', heavy: false, target: 60, run: async (ctx) => {
     const pods = await ctx.k8s.listPods(ctx.cfg.appNamespace, 'app=api');
     for (const p of pods) await ctx.k8s.deletePod(ctx.cfg.appNamespace, p.metadata.name);
     return { deleted: pods.length };
   } },
-  { id: 'crash', title: 'Crash the process', heavy: false, run: (ctx) => internal(ctx, 'crash') },
-  { id: 'leak', title: 'Memory leak', heavy: false, run: (ctx) => internal(ctx, 'leak') },
-  { id: 'hang', title: 'Hang the app', heavy: false, observeMs: 75_000, run: (ctx) => internal(ctx, 'hang') },
-  { id: 'scale-zero', title: 'Scale the web tier to 0', heavy: false, run: async (ctx) => {
+  { id: 'crash', title: 'Crash the process', heavy: false, target: 30, run: (ctx) => internal(ctx, 'crash') },
+  { id: 'leak', title: 'Memory leak', heavy: false, target: 60, run: (ctx) => internal(ctx, 'leak') },
+  { id: 'hang', title: 'Hang the app', heavy: false, target: 90, observeMs: 75_000, run: (ctx) => internal(ctx, 'hang') },
+  { id: 'scale-zero', title: 'Scale the web tier to 0', heavy: false, target: 120, run: async (ctx) => {
     await ctx.k8s.scaleDeployment(ctx.cfg.appNamespace, 'web', 0);
     return {};
   } },
-  { id: 'delete-web', title: 'Delete the web Deployment', heavy: false, run: async (ctx) => {
+  { id: 'delete-web', title: 'Delete the web Deployment', heavy: false, target: 120, run: async (ctx) => {
     await ctx.k8s.deleteDeployment(ctx.cfg.appNamespace, 'web');
     return {};
   } },
-  { id: 'delete-api-svc', title: 'Delete the api Service', heavy: false, run: async (ctx) => {
+  { id: 'delete-api-svc', title: 'Delete the api Service', heavy: false, target: 120, run: async (ctx) => {
     await ctx.k8s.deleteService(ctx.cfg.appNamespace, 'api');
     return {};
   } },
-  { id: 'bad-release', title: 'Ship a bad release by hand', heavy: false, run: async (ctx) => {
+  { id: 'bad-release', title: 'Ship a bad release by hand', heavy: false, target: 180, run: async (ctx) => {
     const api = (await ctx.k8s.listDeployments(ctx.cfg.appNamespace)).find((d) => d.metadata.name === 'api');
     const image = api.spec.template.spec.containers[0].image.replace(/:[^:/]+$/, ':bad');
     await ctx.k8s.setImage(ctx.cfg.appNamespace, 'api', 'api', image);
     return { image };
   } },
-  { id: 'delete-secret', title: 'Delete the database Secret', heavy: false, run: async (ctx) => {
+  { id: 'delete-secret', title: 'Delete the database Secret', heavy: false, target: 120, run: async (ctx) => {
     await ctx.k8s.deleteSecret(ctx.cfg.appNamespace, 'clinic-db');
     return {};
   } },
-  { id: 'rogue-netpol', title: 'Delete the api network allow rule', heavy: false, run: async (ctx) => {
+  { id: 'rogue-netpol', title: 'Delete the api network allow rule', heavy: false, target: 180, run: async (ctx) => {
     // NetworkPolicies only add permissions, so a new deny-all changes nothing next to existing allows.
     // Removing the allow rule does: default-deny now blocks all traffic to the api until Argo CD restores it.
     await ctx.k8s.deleteNetworkPolicy(ctx.cfg.appNamespace, 'api-ingress');
     return {};
   } },
-  { id: 'kill-postgres', title: 'Kill Postgres', heavy: false, run: async (ctx) => {
+  { id: 'kill-postgres', title: 'Kill Postgres', heavy: false, target: 120, run: async (ctx) => {
     await ctx.k8s.deletePod(ctx.cfg.dataNamespace, 'postgres-0');
     return {};
   } },
-  { id: 'traffic-spike', title: 'Traffic spike', heavy: true, observeMs: 100_000, run: async (ctx) => {
+  { id: 'traffic-spike', title: 'Traffic spike', heavy: true, target: 480, observeMs: 100_000, run: async (ctx) => {
     ctx.load(90_000); // runs in the background; the HPA reacts within a minute
     return { seconds: 90 };
   } },
-  { id: 'nuke-namespace', title: 'Nuke the clinic namespace', heavy: true, run: async (ctx) => {
+  { id: 'nuke-namespace', title: 'Nuke the clinic namespace', heavy: true, target: 300, run: async (ctx) => {
     await ctx.k8s.deleteNamespace(ctx.cfg.appNamespace);
     return {};
   } },
