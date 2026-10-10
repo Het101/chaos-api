@@ -109,3 +109,24 @@ test('thresholds come from chaos-config, with defaults; a broken read uses the d
   const broken = new BudgetPolicy({ reader, readThresholds: async () => { throw new Error('api down'); } });
   await broken.tick(); assert.equal(broken.frozen, false);
 });
+
+test('a hung threshold read times out to the defaults; a tick never overlaps another', async () => {
+  let polls = 0;
+  const reader = { async poll() { polls++; }, read: () => reading(0.3) };
+  const p = new BudgetPolicy({ reader, readThresholds: () => new Promise(() => {}), thresholdsMs: 20 });
+  await p.tick();
+  assert.equal(polls, 1);
+  assert.equal(p.frozen, false);
+  await Promise.all([p.tick(), p.tick()]);
+  assert.equal(polls, 2);
+});
+
+test('a failed poll records why; a good poll clears it', async () => {
+  const bad = new SloReader({ url: 'http://prom', fetchImpl: fakeProm({ fail: true }).fetchImpl });
+  assert.equal(await bad.poll(), false);
+  assert.equal(bad.lastError, 'ECONNREFUSED');
+  const good = new SloReader({ url: 'http://prom', fetchImpl: fakeProm().fetchImpl });
+  good.lastError = 'old';
+  await good.poll();
+  assert.equal(good.lastError, null);
+});

@@ -1,3 +1,4 @@
+import { withTimeout } from './errors.js';
 // The lab's SLO, read from Prometheus. The SLO itself is defined once, in the recording rules (hetops-k8s-lab,
 // platform/monitoring/extras/slo-rules.yaml); chaos-api only reads it. The queries are constants: no request data
 // ever reaches Prometheus.
@@ -11,6 +12,7 @@ export const STALE_MS = 120_000;
 
 export class SloReader {
   #last = null;
+  lastError = null; // why the last poll failed (null after a good one), so the caller can log it
 
   constructor({ url, fetchImpl = fetch, now = Date.now, timeoutMs = 3000 }) {
     Object.assign(this, { url, fetchImpl, now, timeoutMs });
@@ -29,8 +31,10 @@ export class SloReader {
     try {
       const pairs = await Promise.all(Object.entries(QUERIES).map(async ([k, q]) => [k, await this.#query(q)]));
       this.#last = { ...Object.fromEntries(pairs), at: this.now() };
+      this.lastError = null;
       return true;
-    } catch {
+    } catch (err) {
+      this.lastError = err.message;
       return false;
     }
   }
@@ -51,23 +55,30 @@ export function parseThresholds(data = {}) {
 export class BudgetPolicy {
   #frozen = false;
   #state = null;
+  #ticking = false;
 
-  constructor({ reader, readThresholds = async () => DEFAULTS, broadcast = () => {}, gauge = null }) {
-    Object.assign(this, { reader, readThresholds, broadcast, gauge });
+  constructor({ reader, readThresholds = async () => DEFAULTS, broadcast = () => {}, gauge = null, thresholdsMs = 5000 }) {
+    Object.assign(this, { reader, readThresholds, broadcast, gauge, thresholdsMs });
   }
 
   get frozen() { return this.#frozen; }
   get state() { return this.#state; }
 
   async tick() {
-    await this.reader.poll();
-    const slo = this.reader.read();
-    const t = await this.readThresholds().catch(() => DEFAULTS);
-    if (!slo) this.#frozen = false; // fail open: broken monitoring must not take the lab down (SLIMissing pages instead)
-    else if (slo.budget <= t.freezeAt) this.#frozen = true;
-    else if (slo.budget >= t.reopenAt) this.#frozen = false;
-    this.#state = slo ? { budget: slo.budget, sli7d: slo.sli7d, burn5m: slo.burn5m, burn1h: slo.burn1h, frozen: this.#frozen } : null;
-    this.gauge?.set(this.#frozen ? 1 : 0);
-    this.broadcast('slo', this.#state);
+    if (this.#ticking) return; // a slow tick must never be overtaken by the next one
+    this.#ticking = true;
+    try {
+      const t = await withTimeout(this.readThresholds(), this.thresholdsMs, 'thresholds').catch(() => DEFAULTS);
+      await this.reader.poll();
+      const slo = this.reader.read();
+      if (!slo) this.#frozen = false; // fail open: broken monitoring must not take the lab down (SLIMissing pages instead)
+      else if (slo.budget <= t.freezeAt) this.#frozen = true;
+      else if (slo.budget >= t.reopenAt) this.#frozen = false;
+      this.#state = slo ? { budget: slo.budget, sli7d: slo.sli7d, burn5m: slo.burn5m, burn1h: slo.burn1h, frozen: this.#frozen } : null;
+      this.gauge?.set(this.#frozen ? 1 : 0);
+      this.broadcast('slo', this.#state);
+    } finally {
+      this.#ticking = false;
+    }
   }
 }

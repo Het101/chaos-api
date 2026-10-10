@@ -84,7 +84,12 @@ const refresh = async () => {
   }
 };
 
-const tickBudget = () => budget.tick().catch((err) => app.log.warn({ err: err.message }, 'slo tick failed'));
+let lastSloError = null;
+const tickBudget = () => budget.tick().catch((err) => app.log.warn({ err: err.message }, 'slo tick failed')).then(() => {
+  const err = budget.reader.lastError;
+  if (err && err !== lastSloError) app.log.warn({ err }, 'slo read failed'); // once per change, not every 30 s
+  lastSloError = err;
+});
 const timers = [setInterval(refresh, 1000), setInterval(() => stream.heartbeat(), 15_000), setInterval(tickBudget, 30_000)];
 tickBudget();
 prober.start();

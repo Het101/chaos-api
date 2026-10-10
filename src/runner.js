@@ -67,9 +67,9 @@ export class Runner {
   }
 
   #finish(exp, bad0) {
+    this.guard.end();
     exp.endedAt = this.now();
     exp.cost = Math.max(0, this.badVisits() - bad0) / WEEKLY_BAD_VISITS; // what this experiment spent of the weekly budget
-    this.guard.end();
     this.incidents.add(exp);
     this.broadcast('experiment', { ...exp });
     this.metrics?.experiments.inc({ action: exp.action, status: exp.status });
