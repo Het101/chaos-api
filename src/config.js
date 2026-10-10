@@ -17,6 +17,7 @@ export function loadConfig(env = process.env) {
     webUrl: env.WEB_URL ?? 'http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/',
     probeHost: env.PROBE_HOST ?? 'lab.hetops.dev',
     loadUrl: env.LOAD_URL ?? 'http://api.clinic.svc.cluster.local/api/work',
+    promUrl: env.PROM_URL ?? 'http://kps-kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090',
     allowedOrigin: env.ALLOWED_ORIGIN ?? 'https://hetops.dev',
     nodeMemoryBytes: Number(env.NODE_MEMORY_BYTES ?? 24 * 1024 ** 3),
     memoryThreshold: Number(env.MEMORY_THRESHOLD ?? 0.8),

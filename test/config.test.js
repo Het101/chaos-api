@@ -16,6 +16,7 @@ test('defaults match the lab', () => {
   assert.equal(c.webUrl, 'http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/');
   assert.equal(c.probeHost, 'lab.hetops.dev');
   assert.equal(c.loadUrl, 'http://api.clinic.svc.cluster.local/api/work');
+  assert.equal(c.promUrl, 'http://kps-kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090');
   assert.equal(c.allowedOrigin, 'https://hetops.dev');
   assert.equal(c.nodeMemoryBytes, 24 * 1024 ** 3);
   assert.equal(c.memoryThreshold, 0.8);

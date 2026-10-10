@@ -77,7 +77,7 @@ test('5xx never leaks internals', async () => {
 
 test('a non-ASCII bypass header is a 403, never a 500', async () => {
   const { app } = make();
-  const res = await app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload: {}, headers: { 'x-chaos-bypass': 'bypasé' } });
+  const res = await app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload: {}, headers: { 'x-chaos-bypass': 'bypasï¿½' } });
   assert.equal(res.statusCode, 403);
 });
 
@@ -90,10 +90,30 @@ test('a full stream answers 503 before hijacking', async () => {
 
 test('status says whether experiments are on and what is running', async () => {
   const { app } = make({ deps: { runner: { start: async () => ({ ok: true }), readEnabled: async () => true, guard: { running: { id: 'e9', action: 'kill-pod' } } } } });
-  assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: true, experiment: { id: 'e9', action: 'kill-pod' } });
+  assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: true, experiment: { id: 'e9', action: 'kill-pod' }, slo: null });
 });
 
 test('status: owner mode reads as paused to the public', async () => {
   const { app } = make({ deps: { runner: { start: async () => ({ ok: true }), readEnabled: async () => 'owner', guard: { running: null } } } });
-  assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: false, experiment: null });
+  assert.deepEqual((await app.inject('/chaos/status')).json(), { enabled: false, experiment: null, slo: null });
+});
+
+test('status carries the error budget', async () => {
+  const state = { budget: 0.7, sli7d: 0.997, burn5m: 0.4, burn1h: 0.3, frozen: false };
+  const { app } = make({ deps: { slo: { state }, runner: { start: async () => ({ ok: true }), readEnabled: async () => true, guard: { running: null } } } });
+  assert.deepEqual((await app.inject('/chaos/status')).json().slo, state);
+});
+
+test('a frozen budget answers 423', async () => {
+  const { app } = make({ result: { ok: false, reason: 'budget-spent' } });
+  const res = await app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload: { turnstileToken: 'human' } });
+  assert.equal(res.statusCode, 423);
+  assert.equal(res.json().reason, 'budget-spent');
+});
+
+test('a new viewer gets the current budget right away', async () => {
+  const sent = [];
+  const { app } = make({ deps: { slo: { state: { budget: 0.5, frozen: false } }, stream: { add: (res) => res.end(), send: (res, e, d) => sent.push([e, d]) } } });
+  await app.inject('/chaos/stream');
+  assert.deepEqual(sent, [['slo', { budget: 0.5, frozen: false }]]);
 });

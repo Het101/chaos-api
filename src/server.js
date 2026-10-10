@@ -11,6 +11,7 @@ import { verifyTurnstile } from './turnstile.js';
 import { makeLoad } from './actions.js';
 import { buildApp } from './app.js';
 import { withTimeout } from './errors.js';
+import { SloReader, BudgetPolicy, parseThresholds } from './slo.js';
 import { createMetrics, countProbe, countVisit } from './metrics.js';
 
 const cfg = loadConfig();
@@ -34,11 +35,21 @@ const http = async (url, opts) => {
 const prober = new Prober({ url: cfg.probeUrl, webUrl: cfg.webUrl, fetchImpl: httpFetch, headers: { host: cfg.probeHost },
   onBatch: (batch) => stream.broadcast('probes', batch), onResult: (entry) => { countProbe(metrics.probes, entry); countVisit(metrics.visits, entry); } });
 
+// The error budget policy, read from Prometheus every 30 s. Thresholds can be raised in chaos-config to test a freeze.
+const budget = new BudgetPolicy({
+  reader: new SloReader({ url: cfg.promUrl }),
+  readThresholds: async () => parseThresholds((await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data),
+  broadcast: (event, data) => stream.broadcast(event, data),
+  gauge: metrics.frozen,
+});
+
 const runner = new Runner({
   cfg,
   guard: new Guard({ cooldownMs: cfg.cooldownMs, heavyPerHour: cfg.heavyPerHour }),
   incidents,
   metrics,
+  frozen: () => budget.frozen,
+  badVisits: () => prober.bad,
   broadcast: (event, data) => stream.broadcast(event, data),
   health: () => checkHealth(k8s, cfg),
   memory: () => checkMemory(k8s, cfg),
@@ -53,7 +64,7 @@ const runner = new Runner({
 let latest = null;
 let latestJson = '';
 let refreshing = false;
-const app = buildApp({ cfg, runner, stream, incidents, verifyTurnstile, metrics, latestSnapshot: () => latest });
+const app = buildApp({ cfg, runner, stream, incidents, verifyTurnstile, metrics, slo: budget, latestSnapshot: () => latest });
 
 const refresh = async () => {
   if (refreshing) return; // never overlap: a slow API server must not pile up requests
@@ -73,7 +84,9 @@ const refresh = async () => {
   }
 };
 
-const timers = [setInterval(refresh, 1000), setInterval(() => stream.heartbeat(), 15_000)];
+const tickBudget = () => budget.tick().catch((err) => app.log.warn({ err: err.message }, 'slo tick failed'));
+const timers = [setInterval(refresh, 1000), setInterval(() => stream.heartbeat(), 15_000), setInterval(tickBudget, 30_000)];
+tickBudget();
 prober.start();
 
 let closing = false;
