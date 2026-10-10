@@ -85,3 +85,10 @@ test('a visit is good only if page and api both succeeded; both series exist fro
   assert.match(after, /chaos_visits_total\{result="good"\} 2/);
   assert.match(after, /chaos_visits_total\{result="bad"\} 2/);
 });
+
+test('chaos_frozen exists from the start, at 0', async () => {
+  const m = createMetrics();
+  assert.match(await m.register.metrics(), /chaos_frozen 0/);
+  m.frozen.set(1);
+  assert.match(await m.register.metrics(), /chaos_frozen 1/);
+});

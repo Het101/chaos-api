@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SloReader, QUERIES, STALE_MS } from '../src/slo.js';
+import { SloReader, QUERIES, STALE_MS, BudgetPolicy, parseThresholds, DEFAULTS } from '../src/slo.js';
 
 const VALUES = { budget: 0.7, sli7d: 0.997, burn5m: 12.5, burn1h: 1 };
 // A fake Prometheus: answers each fixed query with its value, as the HTTP API does (value: [time, "string"]).
@@ -60,4 +60,52 @@ test('all four or nothing: a missing series or HTTP error is a failed poll', asy
   assert.equal(await r2.poll(), false);
   const r3 = new SloReader({ url: 'http://p', fetchImpl: fakeProm({ values: { ...VALUES, sli7d: 'NaN' } }).fetchImpl });
   assert.equal(await r3.poll(), false);
+});
+
+// A reader whose next reading the test sets directly.
+const stubReader = () => { const r = { value: null, async poll() {}, read() { return r.value; } }; return r; };
+const reading = (budget) => ({ budget, sli7d: 1 - (1 - budget) * 0.01, burn5m: 0, burn1h: 0, at: 0 });
+
+test('freezes at 0, stays frozen until 5% is back, reopens at 5%', async () => {
+  const reader = stubReader();
+  const events = [];
+  const p = new BudgetPolicy({ reader, broadcast: (e, d) => events.push([e, d && d.frozen]) });
+  reader.value = reading(0.3); await p.tick(); assert.equal(p.frozen, false);
+  reader.value = reading(0); await p.tick(); assert.equal(p.frozen, true);
+  reader.value = reading(0.03); await p.tick(); assert.equal(p.frozen, true);
+  reader.value = reading(0.05); await p.tick(); assert.equal(p.frozen, false);
+  assert.deepEqual(events.map((e) => e[1]), [false, true, true, false]);
+  assert.deepEqual(events.map((e) => e[0]), ['slo', 'slo', 'slo', 'slo']);
+});
+
+test('unknown SLO fails open: never frozen, state null', async () => {
+  const reader = stubReader();
+  const p = new BudgetPolicy({ reader });
+  reader.value = reading(-0.2); await p.tick(); assert.equal(p.frozen, true);
+  reader.value = null; await p.tick();
+  assert.equal(p.frozen, false);
+  assert.equal(p.state, null);
+});
+
+test('state carries the four numbers and the freeze, and sets the gauge', async () => {
+  const reader = stubReader();
+  const set = [];
+  const p = new BudgetPolicy({ reader, gauge: { set: (v) => set.push(v) } });
+  reader.value = { budget: 0.7, sli7d: 0.997, burn5m: 12.5, burn1h: 1, at: 5 };
+  await p.tick();
+  assert.deepEqual(p.state, { budget: 0.7, sli7d: 0.997, burn5m: 12.5, burn1h: 1, frozen: false });
+  assert.deepEqual(set, [0]);
+});
+
+test('thresholds come from chaos-config, with defaults; a broken read uses the defaults', async () => {
+  assert.deepEqual(parseThresholds(undefined), DEFAULTS);
+  assert.deepEqual(parseThresholds({ enabled: 'true' }), { freezeAt: 0, reopenAt: 0.05 });
+  assert.deepEqual(parseThresholds({ FREEZE_AT: '0.9', REOPEN_AT: '0.95' }), { freezeAt: 0.9, reopenAt: 0.95 });
+  assert.deepEqual(parseThresholds({ FREEZE_AT: 'abc', REOPEN_AT: '' }), DEFAULTS);
+  const reader = stubReader();
+  reader.value = reading(0.7);
+  const raised = new BudgetPolicy({ reader, readThresholds: async () => ({ freezeAt: 0.9, reopenAt: 0.95 }) });
+  await raised.tick(); assert.equal(raised.frozen, true);
+  const broken = new BudgetPolicy({ reader, readThresholds: async () => { throw new Error('api down'); } });
+  await broken.tick(); assert.equal(broken.frozen, false);
 });

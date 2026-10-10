@@ -37,3 +37,37 @@ export class SloReader {
 
   read() { return this.#last && this.now() - this.#last.at <= STALE_MS ? { ...this.#last } : null; }
 }
+
+// The error budget policy: when the budget is spent, visitor chaos freezes until 5% is back. The gap between
+// freezeAt and reopenAt stops the lab flapping around zero. Thresholds live in chaos-config (FREEZE_AT, REOPEN_AT)
+// so the owner can test a freeze without spending real budget.
+export const DEFAULTS = { freezeAt: 0, reopenAt: 0.05 };
+
+export function parseThresholds(data = {}) {
+  const num = (v, d) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? d : Number(v));
+  return { freezeAt: num(data?.FREEZE_AT, DEFAULTS.freezeAt), reopenAt: num(data?.REOPEN_AT, DEFAULTS.reopenAt) };
+}
+
+export class BudgetPolicy {
+  #frozen = false;
+  #state = null;
+
+  constructor({ reader, readThresholds = async () => DEFAULTS, broadcast = () => {}, gauge = null }) {
+    Object.assign(this, { reader, readThresholds, broadcast, gauge });
+  }
+
+  get frozen() { return this.#frozen; }
+  get state() { return this.#state; }
+
+  async tick() {
+    await this.reader.poll();
+    const slo = this.reader.read();
+    const t = await this.readThresholds().catch(() => DEFAULTS);
+    if (!slo) this.#frozen = false; // fail open: broken monitoring must not take the lab down (SLIMissing pages instead)
+    else if (slo.budget <= t.freezeAt) this.#frozen = true;
+    else if (slo.budget >= t.reopenAt) this.#frozen = false;
+    this.#state = slo ? { budget: slo.budget, sli7d: slo.sli7d, burn5m: slo.burn5m, burn1h: slo.burn1h, frozen: this.#frozen } : null;
+    this.gauge?.set(this.#frozen ? 1 : 0);
+    this.broadcast('slo', this.#state);
+  }
+}
