@@ -5,11 +5,14 @@ import { brief, withTimeout } from './errors.js';
 // The kill switch: "true" = everyone, "owner" = bypass requests only (game day, self-test), anything else = off.
 export const switchAllows = (mode, bypass) => mode === true || mode === 'true' || (mode === 'owner' && bypass);
 
+// The 99% / 7-day SLO allows 1% bad visits: 5 visits/s x 604,800 s x 1% = 30,240 bad visits a week.
+export const WEEKLY_BAD_VISITS = 30_240;
+
 // Starts one experiment, then watches the lab until it is healthy again (or times out).
 export class Runner {
   constructor({ cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx,
-    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true, metrics = null }) {
-    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk, metrics });
+    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true, metrics = null, frozen = () => false, badVisits = () => 0 }) {
+    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk, metrics, frozen, badVisits });
     this.observing = Promise.resolve();
   }
 
@@ -19,10 +22,11 @@ export class Runner {
     const [enabled, h, memoryOk] = await Promise.all([
       withTimeout(this.readEnabled(), this.callMs, 'readEnabled'), withTimeout(this.health(), this.callMs, 'health'), withTimeout(this.memory(), this.callMs, 'memory'),
     ]);
-    const verdict = this.guard.check({ ipHash, heavy: action.heavy, enabled: switchAllows(enabled, bypass), healthy: h.healthy, memoryOk, bypass });
+    const verdict = this.guard.check({ ipHash, heavy: action.heavy, enabled: switchAllows(enabled, bypass), healthy: h.healthy, memoryOk, bypass, frozen: this.frozen() });
     if (!verdict.ok) return { ...verdict, reasons: h.reasons };
 
     const exp = { id: randomUUID(), action: action.id, title: action.title, startedAt: this.now(), ipHash, status: 'running' };
+    const bad0 = this.badVisits();
     this.guard.begin({ ipHash, heavy: action.heavy, bypass, experiment: exp });
     this.broadcast('experiment', { ...exp });
     try {
@@ -35,11 +39,11 @@ export class Runner {
       this.broadcast('experiment', { ...exp });
     }
     const started = { ...exp };
-    this.observing = this.#observe(exp, action); // recovery is watched in the background
+    this.observing = this.#observe(exp, action, bad0); // recovery is watched in the background
     return { ok: true, experiment: started };
   }
 
-  async #observe(exp, action) {
+  async #observe(exp, action, bad0) {
     let sawBreak = false;
     try {
       for (;;) {
@@ -59,11 +63,12 @@ export class Runner {
       exp.status = 'error';
       exp.error = brief(err);
     }
-    this.#finish(exp);
+    this.#finish(exp, bad0);
   }
 
-  #finish(exp) {
+  #finish(exp, bad0) {
     exp.endedAt = this.now();
+    exp.cost = Math.max(0, this.badVisits() - bad0) / WEEKLY_BAD_VISITS; // what this experiment spent of the weekly budget
     this.guard.end();
     this.incidents.add(exp);
     this.broadcast('experiment', { ...exp });

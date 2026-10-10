@@ -24,6 +24,7 @@ export class Prober {
   #timers = [];
   #batch = [];
   #recent = []; // the last 10 s of results, for ok()
+  bad = 0; // bad visits since start: the runner reads it to price each experiment
 
   constructor({ url, webUrl, fetchImpl = fetch, headers, json = true, now = Date.now, intervalMs = 200, flushMs = 1000, onBatch, onResult = () => {} }) {
     Object.assign(this, { url, webUrl, fetchImpl, headers, json, now, intervalMs, flushMs, onBatch, onResult });
@@ -50,6 +51,7 @@ export class Prober {
     if (web) r.web = { ok: web.ok, pod: web.pod };
     this.#batch.push(r);
     this.#recent.push(r);
+    if (!(r.ok && (r.web?.ok ?? true))) this.bad += 1;
     this.onResult(r);
     while (this.#recent.length && this.#recent[0].at < this.now() - 10_000) this.#recent.shift();
   }
