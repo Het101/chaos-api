@@ -77,7 +77,7 @@ test('5xx never leaks internals', async () => {
 
 test('a non-ASCII bypass header is a 403, never a 500', async () => {
   const { app } = make();
-  const res = await app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload: {}, headers: { 'x-chaos-bypass': 'bypasï¿½' } });
+  const res = await app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload: {}, headers: { 'x-chaos-bypass': 'bypasé' } });
   assert.equal(res.statusCode, 403);
 });
 
