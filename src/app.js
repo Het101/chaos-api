@@ -3,14 +3,14 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { ACTIONS } from './actions.js';
 import { switchAllows } from './runner.js';
 
-const STATUS = { 'unknown-action': 404, busy: 409, healing: 409, cooldown: 429, 'hourly-cap': 429, disabled: 503, 'node-memory': 503 };
+const STATUS = { 'unknown-action': 404, busy: 409, healing: 409, cooldown: 429, 'hourly-cap': 429, disabled: 503, 'node-memory': 503, 'budget-spent': 423 };
 const same = (a, b) => {
   if (typeof a !== 'string' || !b) return false;
   const x = Buffer.from(a), y = Buffer.from(b); // byte lengths: timingSafeEqual throws on a mismatch
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, latestSnapshot = () => null, metrics, logger = true }) {
+export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, latestSnapshot = () => null, metrics, slo = null, logger = true }) {
   const app = Fastify({ logger });
 
   app.setErrorHandler((err, req, reply) => {
@@ -40,7 +40,7 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
   }
 
   app.get('/chaos/health', async () => ({ ok: true }));
-  app.get('/chaos/status', async () => ({ enabled: switchAllows(await runner.readEnabled(), false), experiment: runner.guard.running ?? null }));
+  app.get('/chaos/status', async () => ({ enabled: switchAllows(await runner.readEnabled(), false), experiment: runner.guard.running ?? null, slo: slo?.state ?? null }));
   app.get('/chaos/actions', async () => ACTIONS.map(({ id, title, heavy }) => ({ id, title, heavy })));
   app.get('/chaos/incidents', async () => incidents.list());
 
@@ -51,6 +51,7 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
     stream.add(reply.raw, headers);
     const snap = latestSnapshot();
     if (snap) stream.send(reply.raw, 'snapshot', snap);
+    if (slo) stream.send(reply.raw, 'slo', slo.state);
   });
 
   app.post('/chaos/actions/:id', {

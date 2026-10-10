@@ -144,3 +144,23 @@ test('F3: recovered only once users are served again, and user errors count as b
   // pods looked healthy throughout; users failed for 3 polls (2, 4, 6 s), served again at 8 s
   assert.equal(runner.incidents.list()[0].recoveryMs, 8000);
 });
+
+test('a frozen budget refuses visitors before anything runs', async () => {
+  const { runner } = setup();
+  runner.frozen = () => true;
+  assert.equal((await runner.start({ actionId: 'scale-zero', ipHash: 'a' })).reason, 'budget-spent');
+});
+
+test('cost = bad visits during the experiment / the weekly allowance', async () => {
+  const { runner } = setup({ healthSeq: [true, false, true] });
+  runner.ctx = { k8s: { scaleDeployment: async () => {} }, cfg: { appNamespace: 'clinic' } };
+  // Read once at start (100 already bad: they do not count), once at finish (402). Fixed answers, so no race with
+  // the background observer, which can finish before the test's next line runs.
+  const reads = [100, 402];
+  runner.badVisits = () => reads.shift();
+  await runner.start({ actionId: 'scale-zero', ipHash: 'a' });
+  await runner.observing;
+  const exp = runner.incidents.list()[0];
+  assert.equal(exp.status, 'recovered');
+  assert.equal(exp.cost, 302 / 30_240);
+});

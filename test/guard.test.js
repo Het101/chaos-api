@@ -47,3 +47,10 @@ test('bypass skips cooldown and caps but never the lock or health', () => {
   g.begin({ ipHash: 'x', bypass: true, experiment: {} });
   assert.equal(g.check({ ...ok, bypass: true }).reason, 'busy');
 });
+
+test('a spent budget freezes visitors, not the owner or the self-test', () => {
+  const g = new Guard();
+  assert.deepEqual(g.check({ ...ok, ipHash: 'a', frozen: true }), { ok: false, reason: 'budget-spent' });
+  assert.deepEqual(g.check({ ...ok, ipHash: 'a', frozen: true, bypass: true }), { ok: true });
+  assert.equal(g.check({ ...ok, enabled: false, frozen: true }).reason, 'disabled'); // the kill switch still speaks first
+});

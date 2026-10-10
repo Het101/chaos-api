@@ -1,4 +1,4 @@
-import { Registry, Counter, Histogram, collectDefaultMetrics } from 'prom-client';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 
 // A dedicated registry (not the global one) so tests and instances never share state.
 export function createMetrics() {
@@ -12,7 +12,9 @@ export function createMetrics() {
   const visits = new Counter({ name: 'chaos_visits_total', help: 'Synthetic visits (page, then /api), good or bad.', labelNames: ['result'], registers: [register] });
   visits.inc({ result: 'good' }, 0); // both series exist from the start: "no bad visits yet" reads 0, not absent
   visits.inc({ result: 'bad' }, 0);
-  return { register, experiments, recovery, probes, visits };
+  const frozen = new Gauge({ name: 'chaos_frozen', help: '1 while the error budget policy has frozen visitor chaos.', registers: [register] });
+  frozen.set(0);
+  return { register, experiments, recovery, probes, visits, frozen };
 }
 
 // One visit entry from the Prober: the api tier always, the web tier when the visit included the page.

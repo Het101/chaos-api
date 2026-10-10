@@ -14,12 +14,13 @@ export class Guard {
 
   get running() { return this.#running; }
 
-  check({ ipHash, heavy = false, enabled, healthy, memoryOk, bypass = false }) {
+  check({ ipHash, heavy = false, enabled, healthy, memoryOk, bypass = false, frozen = false }) {
     if (!enabled) return { ok: false, reason: 'disabled' };
     if (this.#running) return { ok: false, reason: 'busy' };
     if (!healthy) return { ok: false, reason: 'healing' };
     if (!memoryOk) return { ok: false, reason: 'node-memory' };
     if (bypass) return { ok: true };
+    if (frozen) return { ok: false, reason: 'budget-spent' }; // the error budget policy; bypass (owner, self-test) is exempt
     const t = this.now();
     const last = this.#lastByIp.get(ipHash);
     if (last !== undefined && t - last < this.cooldownMs) {
