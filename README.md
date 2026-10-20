@@ -4,7 +4,7 @@ Lets visitors break the [HetOps Kubernetes lab](https://github.com/Het101/hetops
 
 - **Guardrails:** one experiment at a time; refuses while the lab is unhealthy; Cloudflare Turnstile; 60 s cooldown per visitor; heavy actions max 3/hour; kill switch (`chaos-config` ConfigMap); refuses above 80% node memory.
 - **Routes:** `GET /chaos/actions`, `POST /chaos/actions/:id`, `GET /chaos/stream` (Server-Sent Events: `snapshot`, `probes`, `experiment`), `GET /chaos/incidents`, `GET /chaos/health`.
-- **Env:** `INTERNAL_TOKEN`, `TURNSTILE_SECRET`, `BYPASS_TOKEN`, `IP_SALT` (required); `ALLOWED_ORIGIN`, `NODE_MEMORY_BYTES`, `PROBE_URL`, `LOAD_URL`, namespaces (optional).
+- **Env:** `INTERNAL_TOKEN`, `TURNSTILE_SECRET`, `BYPASS_TOKEN`, `IP_SALT` (required); `ALLOWED_ORIGIN`, `NODE_MEMORY_BYTES`, `PROBE_URL`, `LOAD_URL`, namespaces (optional); `TIMELINE_URL` and `TIMELINE_TOKEN` (optional: report experiments and error-budget freezes to the Change Timeline; without a token nothing is sent). Self-test: `TIMELINE_CHECK_URL` (optional, e.g. `https://lab.hetops.dev/timeline`) adds a `timeline` line that checks every experiment's start and finish reached the timeline.
 - Least-privilege RBAC lives in the lab repo (`apps/chaos/rbac.yaml`).
 
 ```bash

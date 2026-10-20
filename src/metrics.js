@@ -14,7 +14,8 @@ export function createMetrics() {
   visits.inc({ result: 'bad' }, 0);
   const frozen = new Gauge({ name: 'chaos_frozen', help: '1 while the error budget policy has frozen visitor chaos.', registers: [register] });
   frozen.set(0);
-  return { register, experiments, recovery, probes, visits, frozen };
+  const timelineErrors = new Counter({ name: 'chaos_timeline_errors_total', help: 'Events the Change Timeline did not accept (down, timeout, refused).', registers: [register] });
+  return { register, experiments, recovery, probes, visits, frozen, timelineErrors };
 }
 
 // One visit entry from the Prober: the api tier always, the web tier when the visit included the page.
