@@ -57,8 +57,8 @@ export class BudgetPolicy {
   #state = null;
   #ticking = false;
 
-  constructor({ reader, readThresholds = async () => DEFAULTS, broadcast = () => {}, gauge = null, thresholdsMs = 5000 }) {
-    Object.assign(this, { reader, readThresholds, broadcast, gauge, thresholdsMs });
+  constructor({ reader, readThresholds = async () => DEFAULTS, broadcast = () => {}, gauge = null, thresholdsMs = 5000, onChange = () => {} }) {
+    Object.assign(this, { reader, readThresholds, broadcast, gauge, thresholdsMs, onChange });
   }
 
   get frozen() { return this.#frozen; }
@@ -71,12 +71,17 @@ export class BudgetPolicy {
       const t = await withTimeout(this.readThresholds(), this.thresholdsMs, 'thresholds').catch(() => DEFAULTS);
       await this.reader.poll();
       const slo = this.reader.read();
+      const was = this.#frozen;
+      const lastBudget = this.#state?.budget ?? 0;
       if (!slo) this.#frozen = false; // fail open: broken monitoring must not take the lab down (SLIMissing pages instead)
       else if (slo.budget <= t.freezeAt) this.#frozen = true;
       else if (slo.budget >= t.reopenAt) this.#frozen = false;
       this.#state = slo ? { budget: slo.budget, sli7d: slo.sli7d, burn5m: slo.burn5m, burn1h: slo.burn1h, frozen: this.#frozen } : null;
       this.gauge?.set(this.#frozen ? 1 : 0);
       this.broadcast('slo', this.#state);
+      // A freeze or a reopen is a change worth recording (the Change Timeline). A fail-open reopen
+      // (monitoring down) reports the last budget it knew.
+      if (was !== this.#frozen) this.onChange(this.#frozen, slo ? slo.budget : lastBudget);
     } finally {
       this.#ticking = false;
     }

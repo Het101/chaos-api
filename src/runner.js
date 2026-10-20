@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { findAction } from './actions.js';
 import { brief, withTimeout } from './errors.js';
+import { pickExperiment } from './timeline.js';
 
 // The kill switch: "true" = everyone, "owner" = bypass requests only (game day, self-test), anything else = off.
 export const switchAllows = (mode, bypass) => mode === true || mode === 'true' || (mode === 'owner' && bypass);
@@ -11,8 +12,8 @@ export const WEEKLY_BAD_VISITS = 30_240;
 // Starts one experiment, then watches the lab until it is healthy again (or times out).
 export class Runner {
   constructor({ cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx,
-    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true, metrics = null, frozen = () => false, badVisits = () => 0 }) {
-    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk, metrics, frozen, badVisits });
+    now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pollMs = 2000, minObserveMs = 15_000, callMs = 10_000, runMs = 30_000, log = () => {}, userOk = () => true, metrics = null, frozen = () => false, badVisits = () => 0, timeline = () => {} }) {
+    Object.assign(this, { cfg, guard, incidents, broadcast, health, memory, readEnabled, ctx, now, sleep, pollMs, minObserveMs, callMs, runMs, log, userOk, metrics, frozen, badVisits, timeline });
     this.observing = Promise.resolve();
   }
 
@@ -29,6 +30,9 @@ export class Runner {
     const bad0 = this.badVisits();
     this.guard.begin({ ipHash, heavy: action.heavy, bypass, experiment: exp });
     this.broadcast('experiment', { ...exp });
+    // The bypass is the owner (game days and the self-test); everyone else is "a visitor".
+    const actor = bypass ? 'owner' : 'a visitor';
+    this.timeline({ phase: 'start', actor, experiment: pickExperiment(exp) });
     try {
       exp.detail = await withTimeout(action.run(this.ctx), this.runMs, 'action');
     } catch (err) {
@@ -39,11 +43,11 @@ export class Runner {
       this.broadcast('experiment', { ...exp });
     }
     const started = { ...exp };
-    this.observing = this.#observe(exp, action, bad0); // recovery is watched in the background
+    this.observing = this.#observe(exp, action, bad0, actor); // recovery is watched in the background
     return { ok: true, experiment: started };
   }
 
-  async #observe(exp, action, bad0) {
+  async #observe(exp, action, bad0, actor) {
     let sawBreak = false;
     try {
       for (;;) {
@@ -63,15 +67,16 @@ export class Runner {
       exp.status = 'error';
       exp.error = brief(err);
     }
-    this.#finish(exp, bad0);
+    this.#finish(exp, bad0, actor);
   }
 
-  #finish(exp, bad0) {
+  #finish(exp, bad0, actor) {
     this.guard.end();
     exp.endedAt = this.now();
     exp.cost = Math.max(0, this.badVisits() - bad0) / WEEKLY_BAD_VISITS; // what this experiment spent of the weekly budget
     this.incidents.add(exp);
     this.broadcast('experiment', { ...exp });
+    this.timeline({ phase: 'finish', actor, experiment: pickExperiment(exp) });
     this.metrics?.experiments.inc({ action: exp.action, status: exp.status });
     if (exp.status === 'recovered') this.metrics?.recovery.observe({ action: exp.action }, exp.recoveryMs / 1000);
   }

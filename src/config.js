@@ -19,6 +19,9 @@ export function loadConfig(env = process.env) {
     loadUrl: env.LOAD_URL ?? 'http://api.clinic.svc.cluster.local/api/work',
     promUrl: env.PROM_URL ?? 'http://kps-kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090',
     allowedOrigin: env.ALLOWED_ORIGIN ?? 'https://hetops.dev',
+    // The Change Timeline. Both optional: without a token, chaos-api simply does not report to it.
+    timelineUrl: env.TIMELINE_URL ?? 'http://timeline.timeline.svc.cluster.local:8080/ingest/chaos',
+    timelineToken: env.TIMELINE_TOKEN ?? '',
     nodeMemoryBytes: Number(env.NODE_MEMORY_BYTES ?? 24 * 1024 ** 3),
     memoryThreshold: Number(env.MEMORY_THRESHOLD ?? 0.8),
     cooldownMs: 60_000,

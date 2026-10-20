@@ -13,11 +13,13 @@ import { buildApp } from './app.js';
 import { withTimeout } from './errors.js';
 import { SloReader, BudgetPolicy, parseThresholds } from './slo.js';
 import { createMetrics, countProbe, countVisit } from './metrics.js';
+import { createTimeline } from './timeline.js';
 
 const cfg = loadConfig();
 const k8s = createK8s();
 const stream = new Stream();
 const metrics = createMetrics();
+const timeline = createTimeline({ url: cfg.timelineUrl, token: cfg.timelineToken, onError: () => metrics.timelineErrors.inc() });
 
 const incidents = new IncidentLog({ save: (items) => k8s.patchConfigMap(cfg.selfNamespace, 'chaos-incidents', { incidents: JSON.stringify(items) }) });
 try {
@@ -41,6 +43,7 @@ const budget = new BudgetPolicy({
   readThresholds: async () => parseThresholds((await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data),
   broadcast: (event, data) => stream.broadcast(event, data),
   gauge: metrics.frozen,
+  onChange: (frozen, budget) => timeline({ phase: frozen ? 'freeze' : 'reopen', budget }),
 });
 
 const runner = new Runner({
@@ -50,6 +53,7 @@ const runner = new Runner({
   metrics,
   frozen: () => budget.frozen,
   badVisits: () => prober.bad,
+  timeline,
   broadcast: (event, data) => stream.broadcast(event, data),
   health: () => checkHealth(k8s, cfg),
   memory: () => checkMemory(k8s, cfg),
