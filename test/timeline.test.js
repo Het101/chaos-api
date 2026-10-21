@@ -28,7 +28,7 @@ test('createTimeline: a no-op until configured; posts with the token; failures a
   assert.deepEqual(seen, [{ url: 'http://t/ingest/chaos', auth: 'Bearer tok', body: { phase: 'start', actor: 'a visitor' } }]);
 
   createTimeline({ url: 'http://t', token: 'tok', onError: (e) => errors.push(e.message), fetchImpl: async () => ({ ok: false, status: 401 }) })({});
-  createTimeline({ url: 'http://t', token: 'tok', onError: (e) => errors.push(e.message), fetchImpl: async () => { throw new Error('ECONNREFUSED'); } })({});
+  createTimeline({ url: 'http://t', token: 'tok', onError: (e) => errors.push(e.message), sleep: async () => {}, fetchImpl: async () => { throw new Error('ECONNREFUSED'); } })({});
   await tick();
   assert.deepEqual(errors, ['timeline answered 401', 'ECONNREFUSED']);
 });
@@ -87,4 +87,26 @@ test('self-test: an extra "timeline" line checks every experiment is on the time
 
   const off = await runSelftest({ api: 'http://api', token: 'tok', actions, fetchImpl, sleep: async () => {} });
   assert.ok(!off.results.some((r) => r.id === 'timeline'), 'no TIMELINE_CHECK_URL, no check');
+});
+
+test('createTimeline: a restart is ridden out (5xx and network errors retried); a 4xx is not', async () => {
+  const waits = [];
+  const sleep = async (ms) => { waits.push(ms); };
+  let calls = 0;
+  const answers = [() => { throw new Error('ECONNREFUSED'); }, () => ({ ok: false, status: 503 }), () => ({ ok: true })];
+  const errors = [];
+  createTimeline({ url: 'http://t', token: 'tok', sleep, onError: (e) => errors.push(e.message), fetchImpl: async () => answers[calls++]() })({ phase: 'finish' });
+  await tick();
+  assert.equal(calls, 3, 'down, starting, up');
+  assert.deepEqual(waits, [2000, 5000]);
+  assert.deepEqual(errors, []);
+
+  let tries = 0;
+  createTimeline({ url: 'http://t', token: 'tok', sleep, onError: (e) => errors.push(e.message), fetchImpl: async () => { tries++; return { ok: false, status: 401 }; } })({});
+  let down = 0;
+  createTimeline({ url: 'http://t', token: 'tok', sleep, onError: (e) => errors.push(e.message), fetchImpl: async () => { down++; return { ok: false, status: 503 }; } })({});
+  await tick();
+  assert.equal(tries, 1, 'a wrong token is not retried');
+  assert.equal(down, 5, 'one try and four retries, then it gives up');
+  assert.deepEqual(errors, ['timeline answered 401', 'timeline answered 503']);
 });

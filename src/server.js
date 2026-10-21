@@ -43,7 +43,7 @@ const budget = new BudgetPolicy({
   readThresholds: async () => parseThresholds((await k8s.readConfigMap(cfg.selfNamespace, 'chaos-config')).data),
   broadcast: (event, data) => stream.broadcast(event, data),
   gauge: metrics.frozen,
-  onChange: (frozen, budget) => timeline({ phase: frozen ? 'freeze' : 'reopen', budget }),
+  onChange: (frozen, budget) => timeline({ phase: frozen ? 'freeze' : 'reopen', budget, at: Date.now() }),   // at: a retried post keeps its time
 });
 
 const runner = new Runner({
