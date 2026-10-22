@@ -17,6 +17,7 @@ test('SSE: headers, named events, and clients removed on close', () => {
   s.add(a, { 'access-control-allow-origin': 'https://hetops.dev' });
   s.add(b);
   assert.equal(a.headers['content-type'], 'text/event-stream');
+  assert.equal(a.headers['x-accel-buffering'], 'no');
   assert.equal(a.headers['access-control-allow-origin'], 'https://hetops.dev');
   s.broadcast('snapshot', { x: 1 });
   assert.equal(a.chunks.at(-1), 'event: snapshot\ndata: {"x":1}\n\n');
