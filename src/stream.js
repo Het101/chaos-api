@@ -9,7 +9,8 @@ export class Stream {
 
   add(res, headers = {}) {
     if (this.full) return false;
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', ...headers });
+    // x-accel-buffering: any nginx in front (ingress-nginx today, NGINX Gateway Fabric next) passes events on at once.
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no', ...headers });
     res.write(': connected\n\n');
     this.#clients.add(res);
     res.on('close', () => this.#clients.delete(res));
