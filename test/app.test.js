@@ -117,3 +117,13 @@ test('a new viewer gets the current budget right away', async () => {
   await app.inject('/chaos/stream');
   assert.deepEqual(sent, [['slo', { budget: 0.5, frozen: false }]]);
 });
+
+test('the self-test names itself only with the bypass; a visitor cannot claim to be it', async () => {
+  const { app, starts } = make();
+  const post = (headers, payload = {}) => app.inject({ method: 'POST', url: '/chaos/actions/kill-pod', payload, headers });
+  await post({ 'x-chaos-bypass': 'bypass', 'x-chaos-actor': 'self-test' });
+  await post({ 'x-chaos-bypass': 'bypass' });
+  await post({ 'x-chaos-actor': 'self-test' }, { turnstileToken: 'human' });
+  await post({ 'x-chaos-bypass': 'bypass', 'x-chaos-actor': 'owner-but-louder' });
+  assert.deepEqual(starts.map((s) => s.actor), ['self-test', 'owner', 'a visitor', 'owner']);
+});

@@ -20,6 +20,7 @@ function fakeApi({ recoveryMs = {}, refuse = {}, statusOf = {} } = {}) {
     const m = path.match(/^\/chaos\/actions\/(.+)$/);
     if (m && opts.method === 'POST') {
       assert.equal(opts.headers['x-chaos-bypass'], 'tok');
+      assert.equal(opts.headers['x-chaos-actor'], 'self-test', 'the self-test names itself');
       const r = refuse[m[1]]?.shift();
       if (r) return json(r.status, { reason: r.reason });
       running = { id: `e-${m[1]}`, action: m[1] };

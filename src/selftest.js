@@ -11,7 +11,7 @@ export async function runSelftest({ api, token, actions = ACTIONS, fetchImpl = f
     let res, body;
     for (let i = 0; ; i++) {
       res = await fetchImpl(`${api}/chaos/actions/${a.id}`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-chaos-bypass': token }, body: '{}',
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-chaos-bypass': token, 'x-chaos-actor': 'self-test' }, body: '{}',
       });
       body = await res.json();
       if (res.status !== 409 || i >= maxRetries) break; // someone else's experiment, or the lab still healing: wait

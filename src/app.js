@@ -63,7 +63,9 @@ export function buildApp({ cfg, runner, stream, incidents, verifyTurnstile, late
       return reply.code(403).send({ reason: 'turnstile' });
     }
     const ipHash = createHash('sha256').update(cfg.ipSalt + ip).digest('hex').slice(0, 16);
-    const result = await runner.start({ actionId: req.params.id, ipHash, bypass });
+    // The self-test names itself, but only alongside the bypass token: a visitor cannot claim to be it.
+    const actor = !bypass ? 'a visitor' : req.headers['x-chaos-actor'] === 'self-test' ? 'self-test' : 'owner';
+    const result = await runner.start({ actionId: req.params.id, ipHash, bypass, actor });
     if (!result.ok) return reply.code(STATUS[result.reason] ?? 400).send(result);
     return reply.code(202).send(result.experiment);
   });

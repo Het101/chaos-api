@@ -17,7 +17,7 @@ export class Runner {
     this.observing = Promise.resolve();
   }
 
-  async start({ actionId, ipHash, bypass = false }) {
+  async start({ actionId, ipHash, bypass = false, actor = bypass ? 'owner' : 'a visitor' }) {
     const action = findAction(actionId);
     if (!action) return { ok: false, reason: 'unknown-action' };
     const [enabled, h, memoryOk] = await Promise.all([
@@ -30,8 +30,6 @@ export class Runner {
     const bad0 = this.badVisits();
     this.guard.begin({ ipHash, heavy: action.heavy, bypass, experiment: exp });
     this.broadcast('experiment', { ...exp });
-    // The bypass is the owner (game days and the self-test); everyone else is "a visitor".
-    const actor = bypass ? 'owner' : 'a visitor';
     this.timeline({ phase: 'start', actor, experiment: pickExperiment(exp) });
     try {
       exp.detail = await withTimeout(action.run(this.ctx), this.runMs, 'action');
