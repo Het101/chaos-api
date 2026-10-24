@@ -71,7 +71,7 @@ test('the budget policy reports freezing and reopening, once each', async () => 
 test('self-test: an extra "timeline" line checks every experiment is on the timeline', async () => {
   const ids = [];
   const fetchImpl = async (url, opts = {}) => {
-    const json = (status, body) => ({ status, json: async () => body });
+    const json = (status, body) => ({ status, json: async () => body, text: async () => JSON.stringify(body) });
     if (opts.method === 'POST') { const id = `e${ids.length}`; ids.push(id); return json(202, { id }); }
     if (url.endsWith('/chaos/status')) return json(200, { experiment: null });
     if (url.endsWith('/chaos/incidents')) return json(200, ids.map((id) => ({ id, status: 'recovered', recoveryMs: 1000 })));
