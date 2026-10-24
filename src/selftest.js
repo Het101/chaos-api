@@ -4,16 +4,24 @@ import { ACTIONS } from './actions.js';
 
 export async function runSelftest({ api, token, actions = ACTIONS, fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   log = () => {}, retryMs = 10_000, maxRetries = 30, pollMs = 5_000, maxPolls = 150, timelineUrl = '', timelineWaitMs = 30_000 }) {
-  const get = async (path) => (await fetchImpl(api + path)).json();
+  // One bad response (an empty body, a proxy's error page, a refused connection) is a result for that step,
+  // never a crash of the whole night: on 21 Oct one empty body ended the run before nuke-namespace.
+  const json = async (res) => {
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return { reason: `HTTP ${res.status}, not JSON: ${text.slice(0, 40) || 'empty body'}` }; }
+  };
+  const get = async (path) => { try { return await json(await fetchImpl(api + path)); } catch (err) { return { reason: err.message }; } };
   const results = [];
   const started = []; // experiment ids, for the Change Timeline check
   for (const a of actions) {
     let res, body;
     for (let i = 0; ; i++) {
-      res = await fetchImpl(`${api}/chaos/actions/${a.id}`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-chaos-bypass': token, 'x-chaos-actor': 'self-test' }, body: '{}',
-      });
-      body = await res.json();
+      try {
+        res = await fetchImpl(`${api}/chaos/actions/${a.id}`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-chaos-bypass': token, 'x-chaos-actor': 'self-test' }, body: '{}',
+        });
+        body = await json(res);
+      } catch (err) { res = { status: 0 }; body = { reason: err.message }; }
       if (res.status !== 409 || i >= maxRetries) break; // someone else's experiment, or the lab still healing: wait
       await sleep(retryMs);
     }
@@ -23,9 +31,11 @@ export async function runSelftest({ api, token, actions = ACTIONS, fetchImpl = f
       r = { id: a.id, ok: false, why: `refused: ${body.reason ?? res.status}` };
     } else {
       started.push(body.id);
-      for (let i = 0; i < maxPolls && (await get('/chaos/status')).experiment; i++) await sleep(pollMs);
-      const exp = (await get('/chaos/incidents')).find((e) => e.id === body.id);
-      if (!exp) r = { id: a.id, ok: false, why: 'no result' };
+      // A status that could not be read (chaos-api restarting) does not mean "finished": keep polling.
+      for (let i = 0; i < maxPolls; i++) { const s = await get('/chaos/status'); if (!s.reason && !s.experiment) break; await sleep(pollMs); }
+      const list = await get('/chaos/incidents');
+      const exp = Array.isArray(list) ? list.find((e) => e.id === body.id) : undefined;
+      if (!exp) r = { id: a.id, ok: false, why: Array.isArray(list) ? 'no result' : `no result (${list.reason})` };
       else if (exp.status !== 'recovered') r = { id: a.id, ok: false, why: exp.status };
       else {
         const ok = exp.recoveryMs <= a.target * 1000;

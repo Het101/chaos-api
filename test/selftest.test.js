@@ -13,7 +13,7 @@ function fakeApi({ recoveryMs = {}, refuse = {}, statusOf = {} } = {}) {
   const incidents = [];
   let running = null;
   const calls = [];
-  const json = (status, body) => ({ status, json: async () => body });
+  const json = (status, body) => ({ status, json: async () => body, text: async () => JSON.stringify(body) });
   const fetchImpl = async (url, opts = {}) => {
     const path = url.replace('http://api', '');
     calls.push(`${opts.method ?? 'GET'} ${path}`);
@@ -64,4 +64,18 @@ test('a busy or healing lab is waited for, then the action runs', async () => {
 test('the kill switch stops the whole run', async () => {
   const out = await runSelftest(opts(fakeApi({ refuse: { 'kill-pod': [{ status: 503, reason: 'disabled' }] } })));
   assert.deepEqual(summary(out), { up: false, msg: 'aborted: experiments are switched off (chaos-config enabled is not "owner" or "true")' });
+});
+
+test('a response that is not JSON fails that one step, never the end of the night (21 Oct)', async () => {
+  const api = fakeApi();
+  let polls = 0;
+  const fetchImpl = async (url, o = {}) => {
+    if (o.method === 'POST' && url.endsWith('/kill-pod')) return { status: 502, text: async () => '' }; // an empty body
+    if (url.endsWith('/chaos/status') && polls++ === 0) throw new Error('connect ECONNREFUSED');       // chaos-api restarting
+    return api.fetchImpl(url, o);
+  };
+  const out = await runSelftest(opts(api, { fetchImpl }));
+  assert.deepEqual(out.results.map((r) => [r.id, r.ok]), [['kill-pod', false], ['hang', true]], 'the night carries on to the next action');
+  assert.equal(out.results[0].why, 'refused: HTTP 502, not JSON: empty body');
+  assert.ok(polls >= 3, 'an unreadable status is waited out, not taken as finished');
 });
