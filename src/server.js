@@ -5,7 +5,7 @@ import { IncidentLog } from './incidents.js';
 import { Runner } from './runner.js';
 import { Stream } from './stream.js';
 import { Prober, httpFetch } from './prober.js';
-import { takeSnapshot } from './snapshot.js';
+import { takeSnapshot, pollSnapshots } from './snapshot.js';
 import { checkHealth, checkMemory } from './health.js';
 import { verifyTurnstile } from './turnstile.js';
 import { makeLoad } from './actions.js';
@@ -94,7 +94,8 @@ const tickBudget = () => budget.tick().catch((err) => app.log.warn({ err: err.me
   if (err && err !== lastSloError) app.log.warn({ err }, 'slo read failed'); // once per change, not every 30 s
   lastSloError = err;
 });
-const timers = [setInterval(refresh, 1000), setInterval(() => stream.heartbeat(), 15_000), setInterval(tickBudget, 30_000)];
+// A new viewer gets the last snapshot at once and a fresh one within 1 s; runner and self-test do their own health checks.
+const timers = [pollSnapshots(refresh, () => stream.size > 0 || runner.guard.running !== null), setInterval(() => stream.heartbeat(), 15_000), setInterval(tickBudget, 30_000)];
 tickBudget();
 prober.start();
 

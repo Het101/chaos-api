@@ -1,9 +1,9 @@
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Stream } from '../src/stream.js';
 import { Prober } from '../src/prober.js';
-import { takeSnapshot } from '../src/snapshot.js';
+import { takeSnapshot, pollSnapshots } from '../src/snapshot.js';
 
 class FakeRes extends EventEmitter {
   chunks = []; headers = null;
@@ -123,4 +123,31 @@ test('users are only ok when both the page and the api work', async () => {
     fetchImpl: async (url) => (url === 'web' ? reply(webUp ? 200 : 503, null) : reply(200, 'api-1', { pod: 'api-1' })) });
   await p.tick();
   assert.equal(p.ok(4000), false, 'api fine but the page is down');
+});
+
+test('snapshots: every 1 s while watched, every 15 s otherwise', () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    let n = 0, watched = false;
+    const t = pollSnapshots(() => n++, () => watched);
+    mock.timers.tick(1000);
+    assert.equal(n, 1, 'first tick refreshes at once');
+    mock.timers.tick(14_000);
+    assert.equal(n, 1, 'idle: nothing before 15 s');
+    mock.timers.tick(1000);
+    assert.equal(n, 2, 'idle: one refresh per 15 s');
+    watched = true; // a viewer connects
+    mock.timers.tick(1000);
+    assert.equal(n, 3, 'watched: within 1 s, not up to 15 s');
+    mock.timers.tick(5000);
+    assert.equal(n, 8, 'watched: every second');
+    watched = false;
+    mock.timers.tick(14_000);
+    assert.equal(n, 8, 'back to idle');
+    mock.timers.tick(1000);
+    assert.equal(n, 9);
+    clearInterval(t);
+  } finally {
+    mock.timers.reset();
+  }
 });
